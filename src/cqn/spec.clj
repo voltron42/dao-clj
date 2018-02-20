@@ -3,6 +3,42 @@
             [common.validations :as v]
             [common.spec :as c]))
 
+(def alias-pattern #"[a-zA-Z][a-zA-Z0-9]*([_][a-zA-Z][a-zA-Z0-9]*)*")
+
+(def variable-name-pattern #"[a-zA-Z][a-zA-Z0-9]*([-][a-zA-Z][a-zA-Z0-9]*)*")
+
+(def custom-function-name-pattern #"[a-zA-Z][a-zA-Z0-9]*([_][a-zA-Z][a-zA-Z0-9]*)*")
+
+(def column-name-pattern #"[a-zA-Z][a-zA-Z0-9]*([_][a-zA-Z][a-zA-Z0-9]*)*")
+
+(def table-dot-star-pattern #"[a-zA-Z][a-zA-Z0-9]*[\.][\*]")
+
+(def table-dot-column-name-pattern #"([a-zA-Z][a-zA-Z0-9]*[\.])?[a-zA-Z][a-zA-Z0-9]*([_][a-zA-Z][a-zA-Z0-9]*)*")
+
+(def table-name-pattern #"([a-zA-Z][a-zA-Z0-9]*[\.])?[a-zA-Z][a-zA-Z0-9]*([_][a-zA-Z][a-zA-Z0-9]*)*")
+
+(def order-pattern #"(asc|desc)")
+
+(s/def ::alias (s/and symbol? (v/named-as alias-pattern)))
+
+(s/def ::variable-name (s/and keyword? (v/named-as variable-name-pattern)))
+
+(s/def ::column-name (s/and symbol? (v/named-as column-name-pattern)))
+
+(s/def ::table-dot-column-name (s/and symbol? (v/named-as table-dot-column-name-pattern)))
+
+(s/def ::aliased-column-name (s/and symbol? (v/named-as table-dot-column-name-pattern alias-pattern)))
+
+(s/def ::table-dot-star (s/and symbol? (v/named-as table-dot-star-pattern)))
+
+(s/def ::number number?)
+
+(s/def ::string string?)
+
+(s/def ::boolean #{true false})
+
+(s/def ::nil nil?)
+
 (s/def ::not (s/cat :label #{'not}
                     :arg ::where))
 
@@ -36,7 +72,7 @@
                                            :query ::query)))
 
 (s/def ::misc-expression (s/or :custom (s/cat :label #{'custom-fn}
-                                              :func-name (v/named-as c/custom-function-name-pattern)
+                                              :func-name (v/named-as custom-function-name-pattern)
                                               :args (s/* (s/or :literal ::literal
                                                                :var ::variable-name
                                                                :column ::basic-column)))
@@ -98,9 +134,9 @@
                                            (s/coll-of ::column)
                                            (v/no-repeat-columns-or-aliases))))
 
-(s/def ::table-name (s/and symbol? (v/named-as c/table-name-pattern)))
+(s/def ::table-name (s/and symbol? (v/named-as table-name-pattern)))
 
-(s/def ::aliased-table-name (s/and symbol? (v/named-as c/table-name-pattern c/alias-pattern)))
+(s/def ::aliased-table-name (s/and symbol? (v/named-as table-name-pattern alias-pattern)))
 
 (s/def ::table (s/or :name ::table-name
                      :inner-query ::query))
