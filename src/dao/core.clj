@@ -1,5 +1,6 @@
 (ns dao.core
-  (:require [clojure.spec.alpha :as s])
+  (:require [clojure.spec.alpha :as s]
+            [clojure.java.jdbc :as jdbc])
   (:import (clojure.lang ExceptionInfo)))
 
 (defn- validator [spec-name error-message]
@@ -57,33 +58,69 @@
    (build-query query-spec args arg-spec {}))
   ([query-spec args arg-spec table-schema]
    (let [arg-validator (validate-query query-spec arg-spec table-schema)]
-     (validate-args-and-format query-spec args arg-validator))
-    ))
+     (validate-args-and-format query-spec args arg-validator))))
 
-(defn build-inquisitor
+(defn inquire
+  ([db query-spec]
+   (inquire db query-spec {}))
+  ([db query-spec opts]
+   (inquire db query-spec opts {}))
+  ([db query-spec opts args]
+   (inquire db query-spec opts args {}))
+  ([db query-spec opts args arg-spec]
+   (inquire db query-spec opts args arg-spec {}))
+  ([db query-spec opts args arg-spec table-schema]
+   (let [query-args (build-query query-spec args arg-spec table-schema)]
+     (jdbc/query db query-args opts))))
+
+(defn build-inquiry
   ([query-spec]
-   (build-inquisitor query-spec {}))
+   (build-inquiry query-spec {}))
   ([query-spec arg-spec]
-   (build-inquisitor query-spec arg-spec {}))
+   (build-inquiry query-spec arg-spec {}))
   ([query-spec arg-spec table-schema]
    (let [arg-validator (validate-query query-spec arg-spec table-schema)]
      (fn [args]
        (validate-args-and-format query-spec args arg-validator)))))
 
-(defn build-inquisitor-for-func
+(defn build-inquisitor
+  ([db query-spec]
+   (build-inquisitor db query-spec {}))
+  ([db query-spec opts]
+   (build-inquisitor db query-spec opts {}))
+  ([db query-spec opts arg-spec]
+   (build-inquisitor query-spec opts arg-spec {}))
+  ([db query-spec opts arg-spec table-schema]
+   (let [inquire (build-inquiry query-spec arg-spec table-schema)]
+     (fn [args]
+       (jdbc/query db (inquire args) opts)))))
+
+(defn build-inquiry-for-func
   ([query-func]
-    (build-inquisitor-for-func query-func {}))
+   (build-inquiry-for-func query-func {}))
   ([query-func arg-spec]
-   (build-inquisitor-for-func query-func arg-spec {}))
+   (build-inquiry-for-func query-func arg-spec {}))
   ([query-func arg-spec table-schema]
    (fn [args]
      (let [query-spec (query-func args)
            arg-validator (validate-query query-spec arg-spec table-schema)]
        (validate-args-and-format query-spec args arg-validator)))))
 
-(defn build-inquistor-service [inquisitor-spec]
-  (validate-inquisitor-spec inquisitor-spec)
-  (let [service (reduce-kv #(assoc %1 %2 (build-inquisitor %3)) {} inquisitor-spec)]
+(defn build-inquisitor-for-func
+  ([db query-func]
+   (build-inquisitor-for-func query-func {}))
+  ([db query-func opts]
+   (build-inquisitor-for-func query-func opts {}))
+  ([db query-func opts arg-spec]
+   (build-inquisitor-for-func query-func opts arg-spec {}))
+  ([db query-func opts arg-spec table-schema]
+   (let [inquire (build-inquiry-for-func query-func arg-spec table-schema)]
+     (fn [args]
+       (jdbc/query db (inquire args) opts)))))
+
+(defn build-inquiry-service [inquiry-service-spec]
+  (validate-inquisitor-spec inquiry-service-spec)
+  (let [service (reduce-kv #(assoc %1 %2 (build-inquiry %3)) {} inquiry-service-spec)]
     (fn [query-name args]
       (if-not (contains? service query-name)
         (throw (ExceptionInfo.
