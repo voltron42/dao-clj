@@ -241,12 +241,12 @@
 
 (s/def :map/delete (s/and (v/min-count 1) (s/map-of ::variable-name :table/delete)))
 
-(s/def :table/dao (s/merge ::table-spec
-                           (s/and (s/keys :opt-un [:map/get
+(s/def :table/dao (s/and (v/min-count 1)
+                         (s/merge ::table-spec
+                                  (s/keys :opt-un [:map/get
                                                    :map/insert
                                                    :map/update
-                                                   :map/delete])
-                                  (v/min-count 1))))
+                                                   :map/delete]))))
 
 (s/def :table/group (s/and (v/min-count 1)
                            (s/map-of ::table-name :table/columns)))
