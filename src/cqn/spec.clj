@@ -144,7 +144,7 @@
                                                  (s/map-of ::alias ::query))))
 
 (s/def ::additional-table (s/and vector?
-                                 (s/cat :join #{'INNER 'LEFT-OUTER 'RIGHT-OUTER}
+                                 (s/cat :join (s/? #{'INNER 'LEFT-OUTER 'RIGHT-OUTER})
                                         :table ::aliased-table
                                         :on (s/and (v/min-count 1)
                                                    (s/map-of ::table-dot-column-name

@@ -32,9 +32,9 @@
    (validate-query query-spec {} {}))
   ([query-spec arg-spec arg-types]
    (validate-query-spec query-spec)
-   (let []
+   (fn [args]
      ; TODO
-     )))
+     true)))
 
 (defn- swap-args [query-spec args]
   ; TODO
