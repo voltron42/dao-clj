@@ -175,9 +175,12 @@
 
 (s/def ::distinct #{true})
 
+(s/def ::having ::where)
+
 (s/def :table/get (s/keys :opt-un [::select
                                    ::where
                                    ::group-by
+                                   ::having
                                    ::order-by
                                    ::limit
                                    ::offset
