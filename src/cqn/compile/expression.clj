@@ -37,16 +37,30 @@
 (defn build-map [func symbols]
   (reduce #(assoc %1 %2 (func (str %2))) {} symbols))
 
+(defn compile-in-expression [col-name where]
+  (let [vars (filter keyword? where)
+        str-out (str col-name " in (" (clojure.string/join "," (map #(if (keyword? %) "?" (s/stringify %)) where)) ")")]
+    (if (empty? vars)
+      str-out
+      (into [str-out] vars))))
+
+(defn wrap-constantly [func-map]
+  (reduce-kv #(assoc %1 %2 (constantly %3)) {} func-map))
+
 (def ^:private expression-func (merge
                                  {'in (fn [resolver _]
                                         (fn [col-name where]
                                           (if (keyword? where)
                                             (fn [args]
-                                              )
-                                            ())))
-                                  'count (fn [_ _]
-                                           (fn ([] "count(*)")
-                                             ([col-name] (str "count(" col-name ")"))))}
+                                              (compile-in-expression col-name (get args where)))
+                                            (compile-in-expression col-name where))))
+                                   }
+                                 (wrap-constantly
+                                   {'count (fn ([] "count(*)")
+                                             ([col-name] (str "count(" col-name ")")))
+                                    'custom-fn (fn [func & args]
+                                                 (str func "(" (clojure.string/join "," (map s/stringify args)) ")"))
+                                    })
                                  (build-map binary '[= < > <> <= >=])
                                  (build-map n-ary '[and or])
                                  (build-map func '[avg min max median sum])))

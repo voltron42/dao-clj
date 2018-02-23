@@ -1,7 +1,6 @@
 (ns cqn.spec
   (:require [clojure.spec.alpha :as s]
-            [common.validations :as v]
-            [common.spec :as c]))
+            [common.validations :as v]))
 
 (def variable-name-pattern #"[a-zA-Z][a-zA-Z0-9]*([-][a-zA-Z][a-zA-Z0-9]*)*")
 
@@ -55,6 +54,26 @@
                             :first ::where
                             :rest (s/+ ::where)))
 
+(s/def ::similarity (s/cat :label #{'like}
+                            :left ::basic-column
+                            :right (s/or :literal string?
+                                         :var-name ::variable-name)))
+
+(s/def ::between (s/or :string
+                       (s/cat :label #{'between}
+                              :col ::basic-column
+                              :lower (s/or :literal string?
+                                           :var-name ::variable-name)
+                              :upper (s/or :literal string?
+                                           :var-name ::variable-name))
+                       :numeric
+                       (s/cat :label #{'between}
+                              :col ::basic-column
+                              :lower (s/or :literal number?
+                                           :var-name ::variable-name)
+                              :upper (s/or :literal number?
+                                           :var-name ::variable-name))))
+
 (s/def ::where-in (s/cat :label #{'in}
                          :column (s/or :single ::basic-column
                                        :multi (s/and vector?
@@ -69,15 +88,20 @@
                                                                                              :var ::variable-name))))
                                            :query ::query)))
 
+(s/def ::col-func-arg (s/or :literal ::literal
+                          :var ::variable-name
+                          :column ::basic-column))
+
 (s/def ::misc-expression (s/or :custom (s/cat :label #{'custom-fn}
                                               :func-name (v/named-as custom-function-name-pattern)
-                                              :args (s/* (s/or :literal ::literal
-                                                               :var ::variable-name
-                                                               :column ::basic-column)))
+                                              :args (s/* ::col-func-arg))
                                :sysdate (s/cat :label #{'sysdate})
                                :format-date (s/cat :label #{'format-date}
                                                    :col-name ::basic-column
-                                                   :format-str (v/valid-date-format))))
+                                                   :format-str (v/valid-date-format))
+                               :concat (s/cat :label #{'concat}
+                                              :first ::col-func-arg
+                                              :rest (s/+ ::col-func-arg))))
 
 (s/def ::where (s/or :var ::variable-name
                      :bool ::boolean
@@ -87,6 +111,8 @@
                                               :nil ::nil-check
                                               :comp ::comparison
                                               :conj ::conjunction
+                                              :sim ::similarity
+                                              :between ::between
                                               :in ::where-in
                                               :misc ::misc-expression))))
 
@@ -156,9 +182,10 @@
                                  (s/cat :first ::aliased-table
                                         :additional (s/+ ::additional-table)))))
 
-(s/def ::group-by (s/and vector?
-                         (v/min-count 1)
-                         (s/coll-of ::column)))
+(s/def ::group-by (s/or :single ::column
+                        :many (s/and vector?
+                                     (v/min-count 1)
+                                     (s/coll-of ::column))))
 
 (s/def ::ordered-column (s/or :column ::basic-column
                               :ordered (v/named-as entity-pattern order-pattern)))

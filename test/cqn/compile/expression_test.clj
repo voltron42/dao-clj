@@ -29,5 +29,32 @@
   )
 
 (deftest test-binary-w-var-where
-  (is (= (x/build-where-expression-compiler '(= CustomerName :name)) ["CustomerName = ?" :name]))
+  (is (= (x/build-where-expression-compiler
+           '(= CustomerName :name))
+         ["CustomerName = ?" :name]))
   )
+
+(deftest test-in
+  (is (= (x/build-expression-compiler
+           '(in Country ["Germany" "France" "UK"]))
+         "Country in ('Germany','France','UK')"))
+  )
+
+(deftest test-in-w-internal-var
+  (is (= (x/build-expression-compiler
+           '(in Country ["Germany" "France" :third]))
+         ["Country in ('Germany','France',?)" :third]))
+  )
+
+(deftest test-in-w-var
+  (is (= ((x/build-expression-compiler
+            '(in Country :countries))
+           {:countries ["Germany" "France" "UK"]})
+         "Country in ('Germany','France','UK')"))
+  )
+
+(deftest test-custom-fn
+  (is (= (x/build-expression-compiler '(custom-fn GET_SEQ_DC_NEXT_VAL "SEQ_RFS_LOAD_ID"))
+         "GET_SEQ_DC_NEXT_VAL('SEQ_RFS_LOAD_ID')"))
+  )
+
