@@ -17,8 +17,10 @@
                                                           (= modified_date :mod-date)
                                                           (> rfs_load_id :rfs-load-id)))
                                                :order-by [modified_date rfs_load_id]})))
+
   (is (= nil (s/explain-data :cqn.spec/query '{:select [CustomerName City]
                                                :from Customers})))
+
   (is (= nil (s/explain-data :cqn.spec/query '{:select Country
                                                :from Customers
                                                :distinct true})))
