@@ -13,7 +13,7 @@
     :else (throw (ExceptionInfo. "Invalid Column Spec:" column-spec))))
 
 (defn build-select-compiler [select-spec distinct?]
-  (let [header (str "Select " (if (true? distinct?) "distinct " ""))]
+  (let [header (str "Select " (if (true? distinct?) "Distinct " ""))]
     (if (nil? select-spec)
       (str header "*")
       (let [columns (if (vector? select-spec) select-spec [select-spec])

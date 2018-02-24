@@ -37,7 +37,7 @@
 (deftest test-in
   (is (= (x/build-expression-compiler
            '(in Country ["Germany" "France" "UK"]))
-         "Country in ('Germany','France','UK')"))
+         ["Country in (?,?,?)" "Germany" "France" "UK"]))
   )
 
 (deftest test-in-w-internal-var
@@ -50,7 +50,7 @@
   (is (= ((x/build-expression-compiler
             '(in Country :countries))
            {:countries ["Germany" "France" "UK"]})
-         "Country in ('Germany','France','UK')"))
+         ["Country in (?,?,?)" "Germany" "France" "UK"]))
   )
 
 (deftest test-custom-fn

@@ -9,11 +9,12 @@
   (is (= (c/build-order-by-compiler '[CustomerName/desc CustomerAge]) "Order By CustomerName desc, CustomerAge"))
   )
 
-(deftest test-simple-queries
-
+(deftest test-simple-query
   (is (= (c/build-simple-query-compiler '{:from Customers})
          (str "Select *" "\n" "From Customers")))
+  )
 
+(deftest test-simple-where
   (is (= (c/build-simple-query-compiler '{:select {list_count (count)}
                                           :from form.formulary_load
                                           :where (= file_load_id :file-load-id)})
@@ -21,7 +22,9 @@
                "From form.formulary_load" "\n"
                "Where file_load_id = ?")
           :file-load-id]))
+  )
 
+(deftest test-nested-where
   (is (= (c/build-simple-query-compiler '{:from form.rfs_load
                                           :where (or
                                                    (> modified_date :min-mod-date)
@@ -36,4 +39,112 @@
           :min-mod-date
           :mod-date
           :rfs-load-id]))
+  )
+
+(deftest test-multiple-columns
+  (is (= (c/build-simple-query-compiler
+           '{:select [CustomerName City]
+             :from Customers})
+         (str "Select CustomerName, City" "\n"
+              "From Customers")))
+  )
+
+(deftest test-distinct
+  (is (= (c/build-simple-query-compiler
+           '{:select Country
+             :from Customers
+             :distinct true})
+         (str "Select Distinct Country" "\n"
+              "From Customers")))
+  )
+
+(deftest test-where-in
+  (is (= (c/build-simple-query-compiler
+           '{:from Customers
+             :where (in Country ["Germany" "France" "UK"])})
+         [(str "Select *" "\n"
+               "From Customers" "\n"
+               "Where Country in (?,?,?)")
+          "Germany" "France" "UK"]))
+  )
+
+(deftest test-aliased-columns
+  (is (= (c/build-simple-query-compiler
+           '{:select [CustomerID/ID CustomerName/Customer]
+             :from Products})
+         (str "Select CustomerID as ID, CustomerName as Customer" "\n"
+              "From Products")))
+  )
+
+(deftest test-where-like
+  (is (= (c/build-simple-query-compiler
+           '{:from Customers
+             :where (like CustomerName "a%")})
+         (str "Select *" "\n"
+              "From Customers" "\n"
+              "Where CustomerName like 'a%'")))
+  )
+
+(deftest test-between-numbers
+  (is (= (c/build-simple-query-compiler
+           '{:from Products
+             :where (between Price 10 20)})
+         (str "Select *" "\n"
+              "From Products" "\n"
+              "Where Price between 10 and 20")))
+  )
+
+(deftest test-between-strings
+  (is (= (c/build-simple-query-compiler
+           '{:from Products
+             :where (between ProductName "Carnarvon Tigers" "Mozzarella di Giovanni")
+             :order-by ProductName})
+         (str "Select *" "\n"
+              "From Products" "\n"
+              "Where ProductName between 'Carnarvon Tigers' and 'Mozzarella di Giovanni'")))
+  )
+
+(deftest test-concat-columns
+  (is (= (c/build-simple-query-compiler
+           '{:select [CustomerName {Address (concat Address ", " PostalCode ", " City ", " Country)}]
+             :from Products})
+         (str "Select CustomerName, concat(Address,', ',PostalCode,', ',City,', ',Country) as Address" "\n"
+              "From Products")))
+  )
+
+(deftest test-where-and-query
+  (is (= (c/build-simple-query-compiler
+           '{:select w.*
+             :from [form.formulary_load/l
+                    [INNER form.formulary_webdav/w {l.formulary_load_id w.formulary_load_id}]]
+             :where (and
+                      (= l.management_status "A")
+                      (<= l.effective_date :effective-date)
+                      (= w.version :version)
+                      (= w.rollup_drug_db :rollup-drug-db)
+                      (= l.publisher :publisher)
+                      (= l.list_id :list-id)
+                      (= l.type :type)
+                      (nil? l.sub_type))
+             :order-by l.effective_date/desc
+             })
+         [(str "Select w.*" "\n"
+               "From form.formulary_load l" "\n"
+               "inner-join form.formulary_webdav w on l.formulary_load_id = w.formulary_load_id" "\n"
+               "Where l.management_status = 'A' and l.effective_date <= ? and w.version = ? and w.rollup_drug_db = ? and l.publisher = ? and l.list_id = ? and l.type = ? and l.sub_type is null" "\n"
+               "Order By l.effective_date desc")
+          :effective-date :version :rollup-drug-db :publisher :list-id :type]))
+  )
+
+(deftest test-where-in-query
+  (is (= (c/build-simple-query-compiler
+           '{:from Customers
+             :where (in Country {:select Country
+                                 :from Suppliers})})
+         (str "Select *" "\n"
+              "From Customers" "\n"
+              "Where Country in (" "\n"
+              "Select Country" "\n"
+              "From Suppliers" "\n"
+              ")")))
   )

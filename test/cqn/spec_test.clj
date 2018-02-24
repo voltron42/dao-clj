@@ -28,28 +28,8 @@
   (is (= nil (s/explain-data :cqn.spec/query '{:from Customers
                                                :where (in Country ["Germany" "France" "UK"])})))
 
-  (is (= nil (s/explain-data :cqn.spec/query '{:from Customers
-                                               :where (in Country {:select Country
-                                                                   :from Suppliers})})))
-
   (is (= nil (s/explain-data :cqn.spec/query '{:select [CustomerID/ID CustomerName/Customer]
-                                               :from Products})))
-
-  (is (= nil (s/explain-data :cqn.spec/query '{:from [UNION
-                                                      {:select City
-                                                       :from Customers}
-                                                      {:select City
-                                                       :from Suppliers}]
-                                               :order-by City})))
-
-  (is (= nil (s/explain-data :cqn.spec/query '{:from [UNION-ALL
-                                                      {:select [City Country]
-                                                       :from Customers
-                                                       :where (= Country "Germany")}
-                                                      {:select [City Country]
-                                                       :from Suppliers
-                                                       :where (= Country "Germany")}]
-                                               :order-by City})))
+                                                       :from Products})))
 
   (is (= nil (s/explain-data :cqn.spec/query '{:from Customers
                                                :where (like CustomerName "a%")})))
@@ -78,6 +58,26 @@
                                                         (nil? l.sub_type))
                                                :order-by l.effective_date/desc
                                                })))
+
+  (is (= nil (s/explain-data :cqn.spec/query '{:from Customers
+                                               :where (in Country {:select Country
+                                                                   :from Suppliers})})))
+
+  (is (= nil (s/explain-data :cqn.spec/query '{:from [UNION
+                                                      {:select City
+                                                       :from Customers}
+                                                      {:select City
+                                                       :from Suppliers}]
+                                               :order-by City})))
+
+  (is (= nil (s/explain-data :cqn.spec/query '{:from [UNION-ALL
+                                                      {:select [City Country]
+                                                       :from Customers
+                                                       :where (= Country "Germany")}
+                                                      {:select [City Country]
+                                                       :from Suppliers
+                                                       :where (= Country "Germany")}]
+                                               :order-by City})))
 
   (is (= nil (s/explain-data :cqn.spec/query '{:select [{CustomerCount (count)} Country]
                                                :from Customers
