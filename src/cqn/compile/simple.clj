@@ -6,7 +6,7 @@
 
 (defn compile-w-args [args]
   (fn [compiler]
-    (if (string? compiler)
+    (if (or (string? compiler) (vector? compiler))
       compiler
       (compiler args))))
 
@@ -15,6 +15,7 @@
 
 (defn stringify [value]
   (cond (string? value) (str "'" value "'")
+        (keyword? value) value
         :else (str value)))
 
 (defn build-column-name-compiler [col-name]
@@ -59,5 +60,8 @@
   (if (every? #(or (vector? %) (string? %)) compilers)
     (merge-expressions func compilers)
     (fn [args]
-      (func (map (compile-w-args args) compilers)))))
+      (let [result (merge-expressions func (map (compile-w-args args) compilers))]
+        (if (vector? result)
+          (map #(if (keyword? %) (get args %) %) result)
+          result)))))
 

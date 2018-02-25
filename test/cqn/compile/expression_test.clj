@@ -48,10 +48,42 @@
   )
 
 (deftest test-in-w-var
-  (is (= ((x/build-expression-compiler nil
-            '(in Country :countries))
-           {:countries ["Germany" "France" "UK"]})
-         ["Country in (?,?,?)" "Germany" "France" "UK"]))
+  (let [expression-compiler (x/build-expression-compiler nil '(in Country :countries))]
+    (is (= (expression-compiler
+             {:countries ["Germany" "France" "UK"]})
+           ["Country in (?,?,?)" "Germany" "France" "UK"]))
+    (is (= (expression-compiler
+             {:countries ["Germany" "France"]})
+           ["Country in (?,?)" "Germany" "France"]))
+    (is (= (expression-compiler
+             {:countries ["Germany" "France" "UK" "Denmark"]})
+           ["Country in (?,?,?,?)" "Germany" "France" "UK" "Denmark"]))
+    )
+  )
+
+(deftest test-in-and-compare-w-var
+  (let [expression-compiler (x/build-where-expression-compiler
+                              nil '(and (like CustomerName :pattern)
+                                        (in Country :countries)))]
+    (is (= (expression-compiler
+             {:pattern "N%"
+              :countries ["Germany" "France" "UK"]})
+           ["(CustomerName like ?) and (Country in (?,?,?))"
+            "N%"
+            "Germany" "France" "UK"]))
+    (is (= (expression-compiler
+             {:pattern "A%"
+              :countries ["Germany" "France"]})
+           ["(CustomerName like ?) and (Country in (?,?))"
+            "A%"
+            "Germany" "France"]))
+    (is (= (expression-compiler
+             {:pattern "S%"
+              :countries ["Germany" "France" "UK" "Denmark"]})
+           ["(CustomerName like ?) and (Country in (?,?,?,?))"
+            "S%"
+            "Germany" "France" "UK" "Denmark"]))
+    )
   )
 
 (deftest test-custom-fn
