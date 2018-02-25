@@ -4,9 +4,9 @@
 
 (deftest test-select
   (is (= (build-select-compiler nil false) "Select *"))
-  (is (= (build-select-compiler nil true) "Select distinct *"))
+  (is (= (build-select-compiler nil true) "Select Distinct *"))
   (is (= (build-select-compiler 'CustomerId false) "Select CustomerId"))
-  (is (= (build-select-compiler 'CustomerId true) "Select distinct CustomerId"))
+  (is (= (build-select-compiler 'CustomerId true) "Select Distinct CustomerId"))
   (is (= (build-select-compiler '[CustomerId CustomerName] false) "Select CustomerId, CustomerName"))
   (is (= (build-select-compiler '[CustomerId/Id CustomerName] false) "Select CustomerId as Id, CustomerName"))
   (is (= (build-select-compiler '[CustomerId/Id CustomerName/Name] false) "Select CustomerId as Id, CustomerName as Name"))

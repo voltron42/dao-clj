@@ -6,9 +6,9 @@
 (defn build-column-compiler [column-spec]
   (cond
     (symbol? column-spec) (s/build-column-name-compiler column-spec)
-    (list? column-spec) (x/build-expression-compiler column-spec)
+    (list? column-spec) (x/build-expression-compiler nil column-spec)
     (map? column-spec) (let [[[alias expression]] (seq column-spec)
-                             expression-compiler (x/build-expression-compiler expression)]
+                             expression-compiler (x/build-expression-compiler nil expression)]
                          (s/optimize-compiler expression-compiler #(str % " as " alias)))
     :else (throw (ExceptionInfo. "Invalid Column Spec:" column-spec))))
 

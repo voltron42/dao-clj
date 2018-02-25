@@ -24,7 +24,7 @@
   (let [{:keys [join table on]} (apply additional-table addl-table-spec)
         join-str (if (nil? join) ", " (str (clojure.string/lower-case (name join)) "-join "))
         table-compiler (build-table-compiler table)
-        on-expr (x/build-expression-compiler (if (< 1 (count on))
+        on-expr (x/build-expression-compiler nil (if (< 1 (count on))
                                                (cons 'and (map on-kv on))
                                                (on-kv (first on))))]
     (s/optimize-compiler table-compiler #(str join-str % " on " on-expr))))

@@ -1,6 +1,7 @@
 (ns cqn.compile.core-test
   (:require [clojure.test :refer :all]
-            [cqn.compile.core :as c]))
+            [cqn.compile.core :as c]
+            [cqn.compile.expression :as x]))
 
 (deftest test-order-by
   (is (= (c/build-order-by-compiler 'CustomerName) "Order By CustomerName"))
@@ -58,14 +59,51 @@
               "From Customers")))
   )
 
-(deftest test-where-in
-  (is (= (c/build-simple-query-compiler
-           '{:from Customers
-             :where (in Country ["Germany" "France" "UK"])})
-         [(str "Select *" "\n"
-               "From Customers" "\n"
-               "Where Country in (?,?,?)")
-          "Germany" "France" "UK"]))
+(deftest test-where-in-var
+    (is (= (c/build-simple-query-compiler
+             '{:from Customers
+               :where (in Country ["Germany" "France" "UK"])})
+           [(str "Select *" "\n"
+                 "From Customers" "\n"
+                 "Where Country in (?,?,?)")
+            "Germany" "France" "UK"]))
+  )
+
+(deftest test-where-in-var
+  (let [query-compiler (c/build-simple-query-compiler
+                         '{:from Customers
+                           :where (in Country :my-list)})]
+    (is (= (query-compiler {:my-list ["Germany" "France" "UK"]})
+           [(str "Select *" "\n"
+                 "From Customers" "\n"
+                 "Where Country in (?,?,?)")
+            "Germany" "France" "UK"]))
+    (is (= (query-compiler {:my-list ["Germany" "France"]})
+           [(str "Select *" "\n"
+                 "From Customers" "\n"
+                 "Where Country in (?,?)")
+            "Germany" "France"]))
+    (is (= (query-compiler {:my-list ["Germany" "France" "UK" "Denmark"]})
+           [(str "Select *" "\n"
+                 "From Customers" "\n"
+                 "Where Country in (?,?,?,?)")
+            "Germany" "France" "UK" "Denmark"]))
+    )
+  )
+
+(deftest test-where-in-var
+  (let [query-compiler (c/build-where-compiler nil
+                         '(in Country :my-list))]
+    (is (= (query-compiler {:my-list ["Germany" "France" "UK"]})
+           ["Where Country in (?,?,?)"
+            "Germany" "France" "UK"]))
+    (is (= (query-compiler {:my-list ["Germany" "France"]})
+           ["Where Country in (?,?)"
+            "Germany" "France"]))
+    (is (= (query-compiler {:my-list ["Germany" "France" "UK" "Denmark"]})
+           ["Where Country in (?,?,?,?)"
+            "Germany" "France" "UK" "Denmark"]))
+    )
   )
 
 (deftest test-aliased-columns
@@ -101,7 +139,8 @@
              :order-by ProductName})
          (str "Select *" "\n"
               "From Products" "\n"
-              "Where ProductName between 'Carnarvon Tigers' and 'Mozzarella di Giovanni'")))
+              "Where ProductName between 'Carnarvon Tigers' and 'Mozzarella di Giovanni'" "\n"
+              "Order By ProductName")))
   )
 
 (deftest test-concat-columns
@@ -131,7 +170,7 @@
          [(str "Select w.*" "\n"
                "From form.formulary_load l" "\n"
                "inner-join form.formulary_webdav w on l.formulary_load_id = w.formulary_load_id" "\n"
-               "Where l.management_status = 'A' and l.effective_date <= ? and w.version = ? and w.rollup_drug_db = ? and l.publisher = ? and l.list_id = ? and l.type = ? and l.sub_type is null" "\n"
+               "Where (l.management_status = 'A') and (l.effective_date <= ?) and (w.version = ?) and (w.rollup_drug_db = ?) and (l.publisher = ?) and (l.list_id = ?) and (l.type = ?) and (l.sub_type is null)" "\n"
                "Order By l.effective_date desc")
           :effective-date :version :rollup-drug-db :publisher :list-id :type]))
   )
@@ -143,8 +182,9 @@
                                  :from Suppliers})})
          (str "Select *" "\n"
               "From Customers" "\n"
-              "Where Country in (" "\n"
+              "Where Country in ("
               "Select Country" "\n"
-              "From Suppliers" "\n"
+              "From Suppliers"
               ")")))
   )
+

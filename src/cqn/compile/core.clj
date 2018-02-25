@@ -5,14 +5,14 @@
             [cqn.compile.from :as f])
   (:import (clojure.lang ExceptionInfo)))
 
-(defn build-where-compiler [where-spec]
-  (s/optimize-compiler (x/build-where-expression-compiler where-spec) #(str "Where " %))
+(defn build-where-compiler [build-query-compiler where-spec]
+  (s/optimize-compiler (x/build-where-expression-compiler build-query-compiler where-spec) #(str "Where " %))
   )
 
 (defn build-group-by-compiler [group-by-spec])
 
-(defn build-having-compiler [having-spec]
-  (s/optimize-compiler (x/build-where-expression-compiler having-spec) #(str "Having " %))
+(defn build-having-compiler [build-query-compiler having-spec]
+  (s/optimize-compiler (x/build-where-expression-compiler build-query-compiler having-spec) #(str "Having " %))
   )
 
 (defn build-order-by-compiler [order-by-spec]
@@ -34,9 +34,9 @@
                         (conj out (v))
                         out))
                     [select-compiler from-compiler]
-                    {:where #(build-where-compiler where)
+                    {:where #(build-where-compiler build-simple-query-compiler where)
                      :group-by #(build-group-by-compiler group-by)
-                     :having #(build-having-compiler having)
+                     :having #(build-having-compiler build-simple-query-compiler having)
                      :order-by #(build-order-by-compiler order-by)})
         simple-query-compiler (s/optimize-compilers compilers (partial clojure.string/join "\n"))]
     (build-limit-offset-compiler limit offset simple-query-compiler)))

@@ -41,7 +41,11 @@
     (if (vector? compiler)
       (into [(func (first compiler))] (rest compiler))
       (fn [args]
-        (func ((compile-w-args args) compiler))))))
+        (let [result ((compile-w-args args) compiler)]
+          (cond
+            (vector? result) (into [(func (first result))] (rest result))
+            (string? result) (func result)))
+        ))))
 
 (defn merge-expressions [func compilers]
   (let [compilers (map #(if (vector? %) % [%]) compilers)
