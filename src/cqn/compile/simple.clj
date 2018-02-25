@@ -1,4 +1,5 @@
-(ns cqn.compile.simple)
+(ns cqn.compile.simple
+  (:import (clojure.lang ExceptionInfo)))
 
 (defn parse-name [named]
   {:my-ns (namespace named)
@@ -45,13 +46,14 @@
         (let [result ((compile-w-args args) compiler)]
           (cond
             (vector? result) (into [(func (first result))] (rest result))
-            (string? result) (func result)))
+            (string? result) (func result)
+            :else (throw (ExceptionInfo. "Unexpected Type" {:result result}))))
         ))))
 
 (defn merge-expressions [func compilers]
-  (let [compilers (map #(if (vector? %) % [%]) compilers)
-        remaining (apply concat (map rest compilers))
-        query (func (map first compilers))]
+  (let [compilers (mapv #(if (vector? %) % [%]) compilers)
+        remaining (apply concat (mapv rest compilers))
+        query (func (mapv first compilers))]
     (if (empty? remaining)
       query
       (into [query] remaining))))
@@ -60,8 +62,8 @@
   (if (every? #(or (vector? %) (string? %)) compilers)
     (merge-expressions func compilers)
     (fn [args]
-      (let [result (merge-expressions func (map (compile-w-args args) compilers))]
+      (let [result (merge-expressions func (mapv (compile-w-args args) compilers))]
         (if (vector? result)
-          (map #(if (keyword? %) (get args %) %) result)
+          (mapv #(if (keyword? %) (get args %) %) result)
           result)))))
 

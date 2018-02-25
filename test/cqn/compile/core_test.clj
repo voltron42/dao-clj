@@ -1,7 +1,8 @@
 (ns cqn.compile.core-test
   (:require [clojure.test :refer :all]
             [cqn.compile.core :as c]
-            [cqn.compile.expression :as x]))
+            [cqn.compile.expression :as x])
+  (:import (clojure.lang ExceptionInfo)))
 
 (deftest test-order-by
   (is (= (c/build-order-by-compiler 'CustomerName) "Order By CustomerName"))
@@ -59,7 +60,7 @@
               "From Customers")))
   )
 
-(deftest test-where-in-var
+(deftest test-where-in
     (is (= (c/build-simple-query-compiler
              '{:from Customers
                :where (in Country ["Germany" "France" "UK"])})
@@ -69,7 +70,7 @@
             "Germany" "France" "UK"]))
   )
 
-(deftest test-where-in-var
+(deftest test-query-in-var
   (let [query-compiler (c/build-simple-query-compiler
                          '{:from Customers
                            :where (in Country :my-list)})]
@@ -88,6 +89,66 @@
                  "From Customers" "\n"
                  "Where Country in (?,?,?,?)")
             "Germany" "France" "UK" "Denmark"]))
+    )
+  )
+
+(deftest test-query-in-and-compare-w-var
+  (let [query-compiler (c/build-simple-query-compiler
+                         '{:from Customers
+                           :where (and (like CustomerName :pattern)
+                                       (in Country :my-list))})]
+    (is (= (query-compiler {:pattern "A%"
+                            :my-list ["Germany" "France" "UK"]})
+           [(str "Select *" "\n"
+                 "From Customers" "\n"
+                 "Where (CustomerName like ?) and (Country in (?,?,?))")
+            "A%" "Germany" "France" "UK"]))
+    (is (= (query-compiler {:pattern "N%"
+                            :my-list ["Germany" "France"]})
+           [(str "Select *" "\n"
+                 "From Customers" "\n"
+                 "Where (CustomerName like ?) and (Country in (?,?))")
+            "N%" "Germany" "France"]))
+    (is (= (query-compiler {:pattern "S%"
+                            :my-list ["Germany" "France" "UK" "Denmark"]})
+           [(str "Select *" "\n"
+                 "From Customers" "\n"
+                 "Where (CustomerName like ?) and (Country in (?,?,?,?))")
+            "S%" "Germany" "France" "UK" "Denmark"]))
+    )
+  )
+
+(deftest test-where-in-and-compare-w-var
+  (let [query-compiler (c/build-where-compiler nil
+                         '(and (like CustomerName :pattern)
+                               (in Country :my-list)))]
+
+    (let [query
+          (query-compiler {:pattern "A%"
+                           :my-list ["Germany" "France" "UK"]})
+          ]
+      (is (= query
+             ["Where (CustomerName like ?) and (Country in (?,?,?))"
+              "A%" "Germany" "France" "UK"]))
+      )
+
+    (let [query
+          (query-compiler {:pattern "N%"
+                           :my-list ["Germany" "France"]})
+          ]
+      (is (= query
+             ["Where (CustomerName like ?) and (Country in (?,?))"
+              "N%" "Germany" "France"]))
+      )
+
+    (let [query
+          (query-compiler {:pattern "S%"
+                           :my-list ["Germany" "France" "UK" "Denmark"]})
+          ]
+      (is (= query
+             ["Where (CustomerName like ?) and (Country in (?,?,?,?))"
+              "S%" "Germany" "France" "UK" "Denmark"]))
+      )
     )
   )
 

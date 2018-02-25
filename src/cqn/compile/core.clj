@@ -6,18 +6,22 @@
   (:import (clojure.lang ExceptionInfo)))
 
 (defn build-where-compiler [build-query-compiler where-spec]
-  (s/optimize-compiler (x/build-where-expression-compiler build-query-compiler where-spec) #(str "Where " %))
+  (s/optimize-compiler
+    (x/build-where-expression-compiler build-query-compiler where-spec)
+    #(str "Where " %))
   )
 
 (defn build-group-by-compiler [group-by-spec])
 
 (defn build-having-compiler [build-query-compiler having-spec]
-  (s/optimize-compiler (x/build-where-expression-compiler build-query-compiler having-spec) #(str "Having " %))
+  (s/optimize-compiler
+    (x/build-where-expression-compiler build-query-compiler having-spec)
+    #(str "Having " %))
   )
 
 (defn build-order-by-compiler [order-by-spec]
   (let [order-by-spec (if (vector? order-by-spec) order-by-spec [order-by-spec])]
-    (s/optimize-compilers (map s/build-table-name-compiler order-by-spec)
+    (s/optimize-compilers (mapv s/build-table-name-compiler order-by-spec)
                           #(str "Order By " (clojure.string/join ", " %))))
   )
 

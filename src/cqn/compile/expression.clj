@@ -52,11 +52,11 @@
                                    {'count (fn ([] "count(*)")
                                              ([col-name] (str "count(" col-name ")")))
                                     'custom-fn (fn [func & args]
-                                                 (str func "(" (clojure.string/join "," (map s/stringify args)) ")"))
+                                                 (str func "(" (clojure.string/join "," (mapv s/stringify args)) ")"))
                                     'nil? (fn [col-name]
                                             (str col-name " is null"))
                                     'between (fn [& args]
-                                               (let [[col-name low high] (map s/stringify args)]
+                                               (let [[col-name low high] (mapv s/stringify args)]
                                                  (str col-name " between " low " and " high)))
                                     })
                                  (build-map binary '[= < > <> <= >= like])
