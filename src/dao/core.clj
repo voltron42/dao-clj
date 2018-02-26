@@ -35,7 +35,7 @@
     (let [my-coll (if (map? query-spec)
                     (vec (vals query-spec))
                     (vec query-spec))]
-      (set (apply concat (map get-var-set query-spec))))
+      (set (apply concat (map get-var-set my-coll))))
     (if (keyword? query-spec)
       #{query-spec}
       #{})))
@@ -106,9 +106,11 @@
   ([query-spec arg-spec table-schema]
    (let [arg-validator (validate-query query-spec arg-spec table-schema)
          query-compiler (build-query-compiler query-spec)]
-     (fn [args]
-       (arg-validator args)
-       (query-compiler args)))))
+     (fn query
+       ([] (query {}))
+       ([args]
+        (arg-validator args)
+        (query-compiler args))))))
 
 (defn build-inquisitor
   ([db query-spec]
@@ -119,8 +121,10 @@
    (build-inquisitor query-spec opts arg-spec {}))
   ([db query-spec opts arg-spec table-schema]
    (let [inquire (build-inquiry query-spec arg-spec table-schema)]
-     (fn [args]
-       (jdbc/query db (inquire args) opts)))))
+     (fn query
+       ([] (query {}))
+       ([args]
+        (jdbc/query db (inquire args) opts))))))
 
 (defn build-inquiry-for-func
   ([query-func]
@@ -128,12 +132,14 @@
   ([query-func arg-spec]
    (build-inquiry-for-func query-func arg-spec {}))
   ([query-func arg-spec table-schema]
-   (fn [args]
-     (let [query-spec (query-func args)
-           arg-validator (validate-query query-spec arg-spec table-schema)
-           query-compiler (build-query-compiler query-spec)]
-       (arg-validator args)
-       (query-compiler args)))))
+   (fn query
+     ([] (query {}))
+     ([args]
+      (let [query-spec (query-func args)
+            arg-validator (validate-query query-spec arg-spec table-schema)
+            query-compiler (build-query-compiler query-spec)]
+        (arg-validator args)
+        (query-compiler args))))))
 
 (defn build-inquisitor-for-func
   ([db query-func]
@@ -144,8 +150,9 @@
    (build-inquisitor-for-func query-func opts arg-spec {}))
   ([db query-func opts arg-spec table-schema]
    (let [inquire (build-inquiry-for-func query-func arg-spec table-schema)]
-     (fn [args]
-       (jdbc/query db (inquire args) opts)))))
+     (fn query
+       ([] (query {}))
+       ([args] (jdbc/query db (inquire args) opts))))))
 
 (defn build-inquiry-service [inquiry-service-spec]
   (validate-inquisitor-spec inquiry-service-spec)
