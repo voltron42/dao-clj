@@ -37,4 +37,46 @@
       (query)
       (catch ExceptionInfo e
         (is (= "Variables in query not accounted for." (.getMessage e)))
-        (is (= #{:file-load-id} (:missing-vars (.getData e))))))))
+        (is (= #{:file-load-id} (:missing-vars (.getData e))))
+        )))
+
+  (let [query (build-inquiry
+                         '{:from Customers
+                           :where (and (like CustomerName :pattern)
+                                       (in Country :my-list))})]
+    (is (= (query {:pattern "A%" :my-list ["Germany" "France" "UK"]})
+           [(str "Select *" "\n"
+                 "From Customers" "\n"
+                 "Where (CustomerName like ?) and (Country in (?,?,?))")
+            "A%" "Germany" "France" "UK"]))
+    (is (= (query {:pattern "N%" :my-list ["Germany" "France"]})
+           [(str "Select *" "\n"
+                 "From Customers" "\n"
+                 "Where (CustomerName like ?) and (Country in (?,?))")
+            "N%" "Germany" "France"]))
+    (is (= (query {:pattern "S%" :my-list ["Germany" "France" "UK" "Denmark"]})
+           [(str "Select *" "\n"
+                 "From Customers" "\n"
+                 "Where (CustomerName like ?) and (Country in (?,?,?,?))")
+            "S%" "Germany" "France" "UK" "Denmark"]))
+    (try
+      (query)
+      (catch ExceptionInfo e
+        (is (= "Variables in query not accounted for." (.getMessage e)))
+        (is (= #{:pattern :my-list} (:missing-vars (.getData e))))
+        ))
+    (try
+      (query {:pattern "T%"})
+      (catch ExceptionInfo e
+        (is (= "Variables in query not accounted for." (.getMessage e)))
+        (is (= #{:my-list} (:missing-vars (.getData e))))
+        ))
+    (try
+      (query {:my-list ["Germany" "France" "UK" "Denmark"]})
+      (catch ExceptionInfo e
+        (is (= "Variables in query not accounted for." (.getMessage e)))
+        (is (= #{:pattern} (:missing-vars (.getData e))))
+        ))
+    )
+
+  )
