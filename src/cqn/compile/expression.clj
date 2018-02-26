@@ -30,12 +30,24 @@
 (defn build-map [func symbols]
   (reduce #(assoc %1 %2 (func (str %2))) {} symbols))
 
+(defn- build-in-clause [col-name q-count]
+  (str col-name " in (" (clojure.string/join "," (repeat q-count "?")) ")"))
+
+(defn in-clause-limit [] 1000)
+
 (defn compile-in-expression [build-query-compiler col-name where]
   (if (every? #(not (coll? %)) where)
-    (into [(str col-name " in (" (clojure.string/join "," (repeat (count where) "?")) ")")] where)
-    (str col-name " in (" (build-query-compiler where) ")")
-    )
-  )
+    (let [limit (in-clause-limit)
+          item-count (count where)]
+      (if (< limit item-count)
+        (let [r (mod item-count limit)
+              q (int (/ item-count limit))]
+          (str "(" (clojure.string/join
+                     ") or ("
+                     (into (repeat q (build-in-clause col-name limit))
+                           [(build-in-clause col-name r)])) ")"))
+        (into [(build-in-clause col-name (count where))] where)))
+    (str col-name " in (" (build-query-compiler where) ")")))
 
 (defn wrap-constantly [func-map]
   (reduce-kv #(assoc %1 %2 (constantly %3)) {} func-map))

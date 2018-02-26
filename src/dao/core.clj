@@ -46,6 +46,7 @@
   ([query-spec arg-spec arg-types]
    (validate-query-spec query-spec)
    (let [vars (get-var-set query-spec)]
+     ;;todo - further validation
      (fn [args]
        (let [arg-key-set (set (keys args))]
          (when-not (set/subset? vars arg-key-set)
