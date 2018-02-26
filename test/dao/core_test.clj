@@ -5,11 +5,11 @@
 
 (deftest test-build-query
   (is (= (build-query '{:from Customers})
-         (str "Select *" "\n" "From Customers")))
+         [(str "Select *" "\n" "From Customers")]))
   (let [query (build-inquiry '{:from Customers})]
-    (is (= (query) (str "Select *" "\n" "From Customers")))
-    (is (= (query {}) (str "Select *" "\n" "From Customers")))
-    (is (= (query {:some-variable "some value"}) (str "Select *" "\n" "From Customers"))))
+    (is (= (query) [(str "Select *" "\n" "From Customers")]))
+    (is (= (query {}) [(str "Select *" "\n" "From Customers")]))
+    (is (= (query {:some-variable "some value"}) [(str "Select *" "\n" "From Customers")])))
   (is (= (build-query '{:select {list_count (count)}
                                           :from form.formulary_load
                                           :where (= file_load_id :file-load-id)}

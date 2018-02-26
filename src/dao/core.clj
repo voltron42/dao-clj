@@ -60,7 +60,7 @@
         (string? compiled-query)
         (and (vector? compiled-query)
              (every? #(not (keyword? %))
-                     compiled-query))) (constantly compiled-query)
+                     compiled-query))) (constantly [compiled-query])
       (and (vector? compiled-query)
            (some keyword? compiled-query))
       (fn query ([args]
@@ -70,7 +70,11 @@
                     elem))
                 compiled-query))
         ([] (query {})))
-      :else compiled-query)))
+      :else (fn query ([] (query {}))
+              ([args] (let [result (compiled-query args)]
+                        (if (string? result)
+                          [result]
+                          result)))))))
 
 (defn build-query
   ([query-spec]
