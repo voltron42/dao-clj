@@ -1,6 +1,9 @@
 (ns dao.core
   (:require [clojure.spec.alpha :as s]
-            [clojure.java.jdbc :as jdbc])
+            [clojure.java.jdbc :as jdbc]
+            [cqn.compile.core :as c]
+            [cqn.spec :refer :all]
+            [clojure.set :as set])
   (:import (clojure.lang ExceptionInfo)))
 
 (defn- validator [spec-name error-message]
@@ -27,38 +30,60 @@
 
 (def ^:private validate-dao-service-spec (validator :service/dao "Invalid Dao Service:"))
 
+(defn- get-var-set [query-spec]
+  (if (coll? query-spec)
+    (let [my-coll (if (map? query-spec)
+                    (vec (vals query-spec))
+                    (vec query-spec))]
+      (set (apply concat (map get-var-set query-spec))))
+    (if (keyword? query-spec)
+      #{query-spec}
+      #{})))
+
 (defn- validate-query
   ([query-spec]
    (validate-query query-spec {} {}))
   ([query-spec arg-spec arg-types]
    (validate-query-spec query-spec)
-   (fn [args]
-     ; TODO
-     true)))
+   (let [vars (get-var-set query-spec)]
+     (fn [args]
+       (let [arg-key-set (set (keys args))]
+         (when-not (set/subset? vars arg-key-set)
+           (throw (ExceptionInfo.
+                    "Variables in query not accounted for."
+                    {:missing-vars (set/difference vars arg-key-set)}))))))))
 
-(defn- swap-args [query-spec args]
-  ; TODO
-  )
-
-(defn- format-query [query-spec]
-  ; TODO
-  )
-
-(defn- validate-args-and-format [query-spec args arg-validator]
-  (arg-validator args)
-  (let [[swapped-query-spec args] (swap-args query-spec args)
-        _ (validate-query swapped-query-spec)
-        query (format-query swapped-query-spec)]
-    (into [query] args)))
+(defn- build-query-compiler [query-spec]
+  (let [compiled-query (c/build-simple-query-compiler query-spec)]
+    (cond
+      (or
+        (string? compiled-query)
+        (and (vector? compiled-query)
+             (every? #(not (keyword? %))
+                     compiled-query))) (constantly compiled-query)
+      (and (vector? compiled-query)
+           (some keyword? compiled-query))
+      (fn query ([args]
+           (map (fn [elem]
+                  (if (contains? args elem)
+                    (get args elem)
+                    elem))
+                compiled-query))
+        ([] (query {})))
+      :else compiled-query)))
 
 (defn build-query
+  ([query-spec]
+   (build-query query-spec {}))
   ([query-spec args]
    (build-query query-spec args {}))
   ([query-spec args arg-spec]
    (build-query query-spec args arg-spec {}))
   ([query-spec args arg-spec table-schema]
-   (let [arg-validator (validate-query query-spec arg-spec table-schema)]
-     (validate-args-and-format query-spec args arg-validator))))
+   (let [arg-validator (validate-query query-spec arg-spec table-schema)
+         query-compiler (build-query-compiler query-spec)]
+     (arg-validator args)
+     (query-compiler args))))
 
 (defn inquire
   ([db query-spec]
@@ -79,9 +104,11 @@
   ([query-spec arg-spec]
    (build-inquiry query-spec arg-spec {}))
   ([query-spec arg-spec table-schema]
-   (let [arg-validator (validate-query query-spec arg-spec table-schema)]
+   (let [arg-validator (validate-query query-spec arg-spec table-schema)
+         query-compiler (build-query-compiler query-spec)]
      (fn [args]
-       (validate-args-and-format query-spec args arg-validator)))))
+       (arg-validator args)
+       (query-compiler args)))))
 
 (defn build-inquisitor
   ([db query-spec]
@@ -103,8 +130,10 @@
   ([query-func arg-spec table-schema]
    (fn [args]
      (let [query-spec (query-func args)
-           arg-validator (validate-query query-spec arg-spec table-schema)]
-       (validate-args-and-format query-spec args arg-validator)))))
+           arg-validator (validate-query query-spec arg-spec table-schema)
+           query-compiler (build-query-compiler query-spec)]
+       (arg-validator args)
+       (query-compiler args)))))
 
 (defn build-inquisitor-for-func
   ([db query-func]
@@ -156,7 +185,7 @@
   (validate-dao-spec dao-spec)
   (merge {}
          (if-not (nil? insert)
-           {:create (let [inserters (reduce-kv #(assoc %1 %2 (build-inserter #3)) {} insert)]
+           {:create (let [inserters (reduce-kv #(assoc %1 %2 (build-inserter %3)) {} insert)]
                       (fn [label args]
                         (if-not (contains? inserters label)
                           (throw (ExceptionInfo. "Inserter does not exist for label"
@@ -164,7 +193,7 @@
                           ((get inserters label) args))))}
            {})
          (if-not (nil? update)
-           {:update (let [updaters (reduce-kv #(assoc %1 %2 (build-updater #3)) {} update)]
+           {:update (let [updaters (reduce-kv #(assoc %1 %2 (build-updater %3)) {} update)]
                       (fn [label args]
                         (if-not (contains? updaters label)
                           (throw (ExceptionInfo. "Updater does not exist for label"
@@ -172,7 +201,7 @@
                           ((get updaters label) args))))}
            {})
          (if-not (nil? delete)
-           {:delete (let [deleters (reduce-kv #(assoc %1 %2 (build-deleter #3)) {} delete)]
+           {:delete (let [deleters (reduce-kv #(assoc %1 %2 (build-deleter %3)) {} delete)]
                       (fn [label args]
                         (if-not (contains? deleters label)
                           (throw (ExceptionInfo. "Deleter does not exist for label"
@@ -180,7 +209,7 @@
                           ((get deleters label) args))))}
            {})
          (if-not (nil? get)
-           {:get (let [getters (reduce-kv #(assoc %1 %2 (build-getter #3)) {} get)]
+           {:get (let [getters (reduce-kv #(assoc %1 %2 (build-getter %3)) {} get)]
                       (fn [label args]
                         (if-not (contains? getters label)
                           (throw (ExceptionInfo. "Getter does not exist for label"
