@@ -61,57 +61,39 @@
     )
   )
 
-(comment '[AL
-           AK
-           AZ
-           AR
-           CA
-           CO
-           CT
-           DE
-           FL
-           GA
-           HI
-           ID
-           IL
-           IN
-           IA
-           KS
-           KY
-           LA
-           ME
-           MD
-           MA
-           MI
-           MN
-           MS
-           MO
-           MT
-           NE
-           NV
-           NH
-           NJ
-           NM
-           NY
-           NC
-           ND
-           OH
-           OK
-           OR
-           PA
-           RI
-           SC
-           SD
-           TN
-           TX
-           UT
-           VT
-           VA
-           WA
-           WV
-           WI
-           WY
-           ])
+(deftest test-in-w-var-past-limit
+  (let [all-states ["AL" "AK" "AZ" "AR" "CA" "CO" "CT" "DE" "FL" "GA" "HI" "ID" "IL" "IN" "IA" "KS" "KY" "LA" "ME" "MD" "MA" "MI" "MN" "MS" "MO" "MT" "NE" "NV" "NH" "NJ" "NM" "NY" "NC" "ND" "OH" "OK" "OR" "PA" "RI" "SC" "SD" "TN" "TX" "UT" "VT" "VA" "WA" "WV" "WI" "WY"]
+        expression-compiler (x/build-expression-compiler nil '(in State :states))]
+    (with-redefs [x/in-clause-limit (constantly 10)]
+      (let [[query & args] (expression-compiler {:states all-states})]
+        (is (= args all-states))
+        (is (= query "(State in (?,?,?,?,?,?,?,?,?,?)) or (State in (?,?,?,?,?,?,?,?,?,?)) or (State in (?,?,?,?,?,?,?,?,?,?)) or (State in (?,?,?,?,?,?,?,?,?,?)) or (State in (?,?,?,?,?,?,?,?,?,?))"))
+        (is (= (count all-states) (count (filter (partial = \?) query))))
+        )
+      )
+    (with-redefs [x/in-clause-limit (constantly 5)]
+      (let [[query & args] (expression-compiler {:states all-states})]
+        (is (= args all-states))
+        (is (= query "(State in (?,?,?,?,?)) or (State in (?,?,?,?,?)) or (State in (?,?,?,?,?)) or (State in (?,?,?,?,?)) or (State in (?,?,?,?,?)) or (State in (?,?,?,?,?)) or (State in (?,?,?,?,?)) or (State in (?,?,?,?,?)) or (State in (?,?,?,?,?)) or (State in (?,?,?,?,?))"))
+        (is (= (count all-states) (count (filter (partial = \?) query))))
+        )
+      )
+    (with-redefs [x/in-clause-limit (constantly 9)]
+      (let [[query & args] (expression-compiler {:states all-states})]
+        (is (= args all-states))
+        (is (= query "(State in (?,?,?,?,?)) or (State in (?,?,?,?,?,?,?,?,?)) or (State in (?,?,?,?,?,?,?,?,?)) or (State in (?,?,?,?,?,?,?,?,?)) or (State in (?,?,?,?,?,?,?,?,?)) or (State in (?,?,?,?,?,?,?,?,?))"))
+        (is (= (count all-states) (count (filter (partial = \?) query))))
+        )
+      )
+    (with-redefs [x/in-clause-limit (constantly 7)]
+      (let [[query & args] (expression-compiler {:states all-states})]
+        (is (= args all-states))
+        (is (= query "(State in (?)) or (State in (?,?,?,?,?,?,?)) or (State in (?,?,?,?,?,?,?)) or (State in (?,?,?,?,?,?,?)) or (State in (?,?,?,?,?,?,?)) or (State in (?,?,?,?,?,?,?)) or (State in (?,?,?,?,?,?,?)) or (State in (?,?,?,?,?,?,?))"))
+        (is (= (count all-states) (count (filter (partial = \?) query))))
+        )
+      )
+    )
+  )
 
 (deftest test-in-and-compare-w-var
   (let [expression-compiler (x/build-where-expression-compiler

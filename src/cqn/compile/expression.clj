@@ -38,15 +38,16 @@
 (defn compile-in-expression [build-query-compiler col-name where]
   (if (every? #(not (coll? %)) where)
     (let [limit (in-clause-limit)
-          item-count (count where)]
-      (if (< limit item-count)
-        (let [r (mod item-count limit)
-              q (int (/ item-count limit))]
-          (str "(" (clojure.string/join
-                     ") or ("
-                     (into (repeat q (build-in-clause col-name limit))
-                           [(build-in-clause col-name r)])) ")"))
-        (into [(build-in-clause col-name (count where))] where)))
+          item-count (count where)
+          query-str (if (< limit item-count)
+                      (let [r (mod item-count limit)
+                            q (int (/ item-count limit))]
+                        (str "(" (clojure.string/join
+                                   ") or ("
+                                   (into (repeat q (build-in-clause col-name limit))
+                                         (if (< 0 r) [(build-in-clause col-name r)] []))) ")"))
+                      (build-in-clause col-name (count where)))]
+      (into [query-str] where))
     (str col-name " in (" (build-query-compiler where) ")")))
 
 (defn wrap-constantly [func-map]
