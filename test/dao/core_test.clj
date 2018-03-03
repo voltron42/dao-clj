@@ -11,8 +11,8 @@
     (is (= (query {}) [(str "Select *" "\n" "From Customers")]))
     (is (= (query {:some-variable "some value"}) [(str "Select *" "\n" "From Customers")])))
   (is (= (build-query '{:select {list_count (count)}
-                                          :from form.formulary_load
-                                          :where (= file_load_id :file-load-id)}
+                        :from form.formulary_load
+                        :where (= file_load_id :file-load-id)}
                       {:file-load-id "12345"})
          [(str "Select count(*) as list_count" "\n"
                "From form.formulary_load" "\n"
@@ -40,10 +40,9 @@
         (is (= #{:file-load-id} (:missing-vars (.getData e))))
         )))
 
-  (let [query (build-inquiry
-                         '{:from Customers
-                           :where (and (like CustomerName :pattern)
-                                       (in Country :my-list))})]
+  (let [query (build-inquiry '{:from Customers
+                               :where (and (like CustomerName :pattern)
+                                           (in Country :my-list))})]
     (is (= (query {:pattern "A%" :my-list ["Germany" "France" "UK"]})
            [(str "Select *" "\n"
                  "From Customers" "\n"
@@ -78,5 +77,4 @@
         (is (= #{:pattern} (:missing-vars (.getData e))))
         ))
     )
-
   )
