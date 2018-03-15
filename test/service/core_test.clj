@@ -4,8 +4,12 @@
             [service.core :refer :all]
             [common.validations :as v]
             [clojure.spec.alpha :as s]
-            [clojure.string :as str])
-  (:import (clojure.lang ExceptionInfo)))
+            [clojure.string :as str]
+            [clj-time.core :as t])
+  (:import (clojure.lang ExceptionInfo)
+           (java.time DateTimeException)
+           (java.util Formatter$DateTime)
+           (org.joda.time DateTime)))
 
 (deftest test-inquisitor-simple
   (let [db "This is the db!"
@@ -133,9 +137,10 @@
 (deftest test-updater-generic
   (let [db "This is the db!"
         where "file_id = ?"
-        update (build-updater db :datafile {:version     #{"10" "30"}
-                                            :publisher   (v/matches? #"[DST]000000000[0-9][0-9][0-9][0-9][0-9]")
-                                            :action      #{"F" "U"}}
+        update (build-updater db :datafile
+                              {:version     #{"10" "30"}
+                               :publisher   (v/matches? #"[DST]000000000[0-9][0-9][0-9][0-9][0-9]")
+                               :action      #{"F" "U"}}
                               [where :file_id]
                               :arg-spec {:file_id int?}
                               :fixed-values {:load_status "L"})
@@ -204,3 +209,81 @@
             )))
       )))
 
+(s/def :customer/name (v/matches? #"[A-Z][a-z]*"))
+
+(deftest test-executor
+  (let [db "This is the db!"
+        sql ["insert into customer (id,first_name,last_name) values (customer_id_seq(),?,?)"
+             :first-name :last-name]
+        execute (build-executor db sql
+                                :arg-spec {:first-name :customer/name
+                                           :last-name :customer/name})
+        execute-args (atom nil)]
+    (with-redefs [jdbc/execute! #(reset! execute-args %&)]
+      (execute {:first-name "Steve" :last-name "Dave"})
+      (is (= @execute-args [db ["insert into customer (id,first_name,last_name) values (customer_id_seq(),?,?)" "Steve" "Dave"] {}]))
+      )))
+
+(s/def :customer/date-of-birth (partial instance? DateTime))
+
+(deftest test-inserter
+  (let [db "This is the db!"
+        insert (build-inserter db :customer
+                               {:first-name    :customer/name
+                                :last-name     :customer/name
+                                :date-of-birth :customer/date-of-birth})
+        insert-args (atom nil)
+        insert-multi-args (atom nil)]
+    (with-redefs [jdbc/insert! #(reset! insert-args %&)
+                  jdbc/insert-multi! #(reset! insert-multi-args %&)]
+      (try
+        (insert {:first-name "Steve"
+                 :last-name "Dave"
+                 :date-of-birth (t/date-time 1998 2 5)})
+        (let [[insert-db table {:keys [first-name last-name date-of-birth]} opts] @insert-args]
+          (is (= insert-db db))
+          (is (= table :customer))
+          (is (= first-name "Steve"))
+          (is (= last-name "Dave"))
+          (is (and (not (nil? date-of-birth)) (t/equal? date-of-birth (t/date-time 1998 2 5))))
+          (is (= opts {})))
+        (catch ExceptionInfo e
+          (println (pr-str (.getData e)))
+          ))
+
+      (try
+        (insert [{:first-name "Steve"
+                  :last-name "Dave"
+                  :date-of-birth (t/date-time 1998 2 5)}
+                 {:first-name "George"
+                  :last-name "Kaplan"
+                  :date-of-birth (t/date-time 1987 5 17)}])
+        (let [[insert-db table [{:keys [first-name last-name date-of-birth]} {first :first-name last :last-name dob :date-of-birth}] opts] @insert-multi-args]
+          (is (= insert-db db))
+          (is (= table :customer))
+          (is (= first-name "Steve"))
+          (is (= last-name "Dave"))
+          (is (and (not (nil? date-of-birth)) (t/equal? date-of-birth (t/date-time 1998 2 5))))
+          (is (= first "George"))
+          (is (= last "Kaplan"))
+          (is (and (not (nil? dob)) (t/equal? dob (t/date-time 1987 5 17))))
+          (is (= opts {})))
+        (catch ExceptionInfo e
+          (println (pr-str (.getData e)))
+          ))
+
+      (try
+        (insert {:first-name "Steve"
+                 :last-name "Dave"
+                 :date-of-birth "1987-07-12"})
+        (is false "should throw exception")
+        (catch ExceptionInfo e
+          (let [{:keys [errors]} (.getData e)]
+            (is (= (count errors) 1))
+            (let [[{:keys [arg val cond]}] errors]
+              (is (= arg :date-of-birth))
+              (is (= val "1987-07-12"))
+              (is (= (str cond) "(clojure.core/partial clojure.core/instance? org.joda.time.DateTime)"))
+              )
+            )))
+      )))
