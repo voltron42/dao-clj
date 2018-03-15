@@ -4,24 +4,25 @@
             [clojure.java.jdbc :as jdbc])
   (:import (clojure.lang ExceptionInfo)))
 
+(defn- validate-item [spec item label]
+  (if-let [{out-spec :clojure.spec.alpha/spec problems :clojure.spec.alpha/problems} (s/explain-data spec item)]
+    (mapv (fn [{:keys [val pred]}]
+            (let [condition (if (= pred :clojure.spec.alpha/unknown) spec pred)]
+              {:label label
+               :val val
+               :cond condition}))
+          problems)
+    []))
+
 (defn- validate-args [arg-spec args]
   (let [arg-diff (set/difference (set (keys arg-spec)) (set (keys args)))
-        present-args (set/difference (set (keys arg-spec)) arg-diff)
-        errors (reduce-kv
-                 (fn [out arg spec]
-                   (if-let [arg-errors (s/explain-data spec (get args arg))]
-                     (let [val (-> arg-errors :clojure.spec.alpha/problems first :val)
-                           pred (-> arg-errors :clojure.spec.alpha/problems first :pred)
-                           spec (-> arg-errors :clojure.spec.alpha/spec)
-                           condition (if (= pred :clojure.spec.alpha/unknown) spec pred)]
-                       (concat out [{:arg arg
-                                     :val val
-                                     :cond condition}]))
-                     out))
-                 (if (empty? arg-diff) [] [{:missing-args arg-diff}])
-                 (select-keys arg-spec present-args))]
-    (when-not (empty? errors)
-      (throw (ExceptionInfo. "Validation Errors" {:errors (vec errors)})))))
+        present-args (set/difference (set (keys arg-spec)) arg-diff)]
+    (reduce-kv
+      (fn [out arg spec]
+        (let [errors (validate-item spec (get args arg) arg)]
+          (concat out errors)))
+      (if (empty? arg-diff) [] [{:missing-args arg-diff}])
+      (select-keys arg-spec present-args))))
 
 (defn- substitute-args [query args]
   (let [missing-args (set/difference (set (rest query)) (set (keys args)))]
@@ -47,8 +48,10 @@
      (fn my-func
        ([& args]
         (let [[args & {:keys [trx] :or {trx db}}] (if (even? (count args)) (into [{}] args) args)
-              args (merge args fixed-values)]
-          (validate-args arg-spec args)
+              args (merge args fixed-values)
+              errors (validate-args arg-spec args)]
+          (when-not (empty? errors)
+            (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
           (let [[args cols] (mapv #(select-keys args (keys %)) arg-select-objects)
                 query (func args)]
             (try
@@ -81,17 +84,16 @@
           func (if (vector? args)
                  (let [errors (reduce
                                 (fn [out record]
-                                  (try
-                                    (validate-args column-spec record)
-                                    out
-                                    (catch ExceptionInfo e
-                                      (concat out (vector (.getData e))))))
+                                  (concat out
+                                          (validate-item record-spec record :full-record)
+                                          (validate-args column-spec record)))
                                 [] args)]
                    (when-not (empty? errors)
                      (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
                    #(jdbc/insert-multi! trx table args opts))
-                 (do
-                   (validate-args column-spec args)
+                 (let [errors (validate-args column-spec args)]
+                   (when-not (empty? errors)
+                     (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
                    #(jdbc/insert! trx table args opts)))]
       (try
         (func)

@@ -45,7 +45,7 @@
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
             (is (= (count errors) 1))
-            (is (= :table-name (-> errors first :arg)))
+            (is (= :table-name (-> errors first :label)))
             (is (= "_customer" (-> errors first :val)))
             (is (= "(common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str)))
             )))
@@ -95,7 +95,7 @@
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
             (is (= (count errors) 1))
-            (is (= :rfs_load_id (-> errors first :arg)))
+            (is (= :rfs_load_id (-> errors first :label)))
             (is (= "15" (-> errors first :val)))
             (is (not= "clojure.core/int?" (-> errors first :cond str)))
             (is (= (type int?) (-> errors first :cond type)))
@@ -123,7 +123,7 @@
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
             (is (= (count errors) 1))
-            (is (= :rfs_load_id (-> errors first :arg)))
+            (is (= :rfs_load_id (-> errors first :label)))
             (is (= "15" (-> errors first :val)))
             (is (= "clojure.core/int?" (-> errors first :cond str)))
             )))
@@ -154,7 +154,7 @@
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
             (is (= (count errors) 1))
-            (is (= :publisher (-> errors first :arg)))
+            (is (= :publisher (-> errors first :label)))
             (is (= "D000000023456" (-> errors first :val)))
             (is (not= "(common.validations/matches? #\"[DST]000000000[0-9][0-9][0-9][0-9][0-9]\")" (-> errors first :cond str)))
             (is (= (type (v/matches? #"[DST]000000000[0-9][0-9][0-9][0-9][0-9]")) (-> errors first :cond type)))
@@ -165,7 +165,7 @@
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
             (is (= (count errors) 1))
-            (is (= :action (-> errors first :arg)))
+            (is (= :action (-> errors first :label)))
             (is (= "A" (-> errors first :val)))
             (is (= #{"F" "U"} (-> errors first :cond)))
             )))
@@ -192,7 +192,7 @@
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
             (is (= (count errors) 1))
-            (is (= :publisher (-> errors first :arg)))
+            (is (= :publisher (-> errors first :label)))
             (is (= "D000000023456" (-> errors first :val)))
             (is (= "(common.validations/matches? #\"[DST]000000000[0-9][0-9][0-9][0-9][0-9]\")" (-> errors first :cond str)))
 
@@ -203,7 +203,7 @@
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
             (is (= (count errors) 1))
-            (is (= :action (-> errors first :arg)))
+            (is (= :action (-> errors first :label)))
             (is (= "A" (-> errors first :val)))
             (is (= #{"F" "U"} (-> errors first :cond)))
             )))
@@ -280,8 +280,8 @@
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
             (is (= (count errors) 1))
-            (let [[{:keys [arg val cond]}] errors]
-              (is (= arg :date-of-birth))
+            (let [[{:keys [label val cond]}] errors]
+              (is (= label :date-of-birth))
               (is (= val "1987-07-12"))
               (is (= (str cond) "(clojure.core/partial clojure.core/instance? org.joda.time.DateTime)"))
               )
@@ -340,7 +340,7 @@
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
             (is (= (count errors) 1))
-            (is (= :table-name (-> errors first :arg)))
+            (is (= :table-name (-> errors first :label)))
             (is (= "_customer" (-> errors first :val)))
             (is (= "(common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str)))
             )))
@@ -363,7 +363,7 @@
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
             (is (= (count errors) 1))
-            (is (= :rfs_load_id (-> errors first :arg)))
+            (is (= :rfs_load_id (-> errors first :label)))
             (is (= "15" (-> errors first :val)))
             (is (= "clojure.core/int?" (-> errors first :cond str)))
             )))
@@ -384,7 +384,7 @@
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
             (is (= (count errors) 1))
-            (is (= :publisher (-> errors first :arg)))
+            (is (= :publisher (-> errors first :label)))
             (is (= "D000000023456" (-> errors first :val)))
             (is (= "(common.validations/matches? #\"[DST]000000000[0-9][0-9][0-9][0-9][0-9]\")" (-> errors first :cond str)))
             )))
@@ -395,7 +395,7 @@
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
             (is (= (count errors) 1))
-            (is (= :action (-> errors first :arg)))
+            (is (= :action (-> errors first :label)))
             (is (= "A" (-> errors first :val)))
             (is (= #{"F" "U"} (-> errors first :cond)))
             )))
@@ -443,8 +443,8 @@
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
             (is (= (count errors) 1))
-            (let [[{:keys [arg val cond]}] errors]
-              (is (= arg :date-of-birth))
+            (let [[{:keys [label val cond]}] errors]
+              (is (= label :date-of-birth))
               (is (= val "1987-07-12"))
               (is (= (str cond) "(clojure.core/partial clojure.core/instance? org.joda.time.DateTime)"))
               )
