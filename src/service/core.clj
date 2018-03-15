@@ -30,9 +30,9 @@
     (into [(first query)] (mapv (partial get args) (rest query)))))
 
 (defn- build-basic
-  ([jdbc-func sql-params arg-spec]
-    (build-basic jdbc-func [arg-spec {}] sql-params arg-spec {}))
-  ([jdbc-func arg-select-objects sql-params arg-spec fixed-values]
+  ([db jdbc-func sql-params arg-spec obj-spec]
+    (build-basic db jdbc-func [arg-spec {}] sql-params arg-spec obj-spec {}))
+  ([db jdbc-func arg-select-objects sql-params arg-spec obj-spec fixed-values]
    (let [sql-params (if (string? sql-params)
                       [sql-params]
                       sql-params)
@@ -45,14 +45,14 @@
                       (throw (ExceptionInfo. "Resulting of sql building function must be either a string or vector" {:sql result :type (type result)})))
                     result)))]
      (fn my-func
-       ([] (my-func fixed-values))
-       ([args]
-        (let [args (merge args fixed-values)]
+       ([& args]
+        (let [[args & {:keys [trx] :or {trx db}}] (if (even? (count args)) (into [{}] args) args)
+              args (merge args fixed-values)]
           (validate-args arg-spec args)
           (let [[args cols] (mapv #(select-keys args (keys %)) arg-select-objects)
                 query (func args)]
             (try
-              (jdbc-func cols query)
+              (jdbc-func trx cols query)
               (catch Throwable e
                 (throw (ExceptionInfo.
                          "Database Error"
@@ -63,42 +63,65 @@
 (defn- fixed-validator [fixed-vals]
   (reduce-kv #(assoc %1 %2 (set (vector %3))) {} fixed-vals))
 
-(defn build-inquisitor [db sql-params & {:keys [opts arg-spec] :or {opts {} arg-spec {}}}]
-  (build-basic #(jdbc/query db %2 opts) sql-params arg-spec))
+(defn build-inquisitor [db sql-params & {:keys [opts arg-spec obj-spec] :or {opts {} arg-spec {} obj-spec any?}}]
+  (build-basic db #(jdbc/query %1 %3 opts) sql-params arg-spec obj-spec))
 
-(defn build-deleter [db table where-clause & {:keys [opts arg-spec] :or {opts {} arg-spec {}}}]
-  (build-basic #(jdbc/delete! db table %2 opts) where-clause arg-spec))
+(defn build-deleter [db table where-clause & {:keys [opts arg-spec obj-spec] :or {opts {} arg-spec {}}}]
+  (build-basic db #(jdbc/delete! %1 table %3 opts) where-clause arg-spec obj-spec))
 
-(defn build-updater [db table column-spec where-clause & {:keys [opts arg-spec fixed-values] :or {opts {} arg-spec {} fixed-values {}}}]
-  (build-basic #(jdbc/update! db table %1 %2 opts) [arg-spec (merge column-spec fixed-values)] where-clause (merge column-spec arg-spec (fixed-validator fixed-values)) fixed-values))
+(defn build-updater [db table column-spec where-clause & {:keys [opts arg-spec fixed-values record-spec] :or {opts {} arg-spec {} fixed-values {}}}]
+  (build-basic db #(jdbc/update! %1 table %2 %3 opts) [arg-spec (merge column-spec fixed-values)] where-clause (merge column-spec arg-spec (fixed-validator fixed-values)) record-spec fixed-values))
 
-(defn build-executor [db sql-params & {:keys [opts arg-spec] :or {opts {} arg-spec {}}}]
-  (build-basic #(jdbc/execute! db %2 opts) sql-params arg-spec))
+(defn build-executor [db sql-params & {:keys [opts arg-spec obj-spec] :or {opts {} arg-spec {} obj-spec any?}}]
+  (build-basic db #(jdbc/execute! %1 %3 opts) sql-params arg-spec obj-spec))
 
-(defn build-inserter [db table column-spec & {:keys [opts] :or {opts {}}}]
-  (fn insert
-    ([] (insert {}))
-    ([args]
-     (let [func (if (vector? args)
-                  (let [errors (reduce
-                                 (fn [out record]
-                                   (try
-                                     (validate-args column-spec record)
-                                     out
-                                     (catch ExceptionInfo e
-                                       (concat out (vector (.getData e))))))
-                                 [] args)]
-                    (when-not (empty? errors)
-                      (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
-                    #(jdbc/insert-multi! db table args opts))
-                  (do
-                    (validate-args column-spec args)
-                    #(jdbc/insert! db table args opts)))]
-       (try
-         (func)
-         (catch Throwable e
-           (throw (ExceptionInfo.
-                    "Database Error"
-                    {:message (.getMessage e)
-                     :type (type e)
-                     :stack-trace (.getStackTrace e)}))))))))
+(defn build-inserter [db table column-spec & {:keys [opts record-spec] :or {opts {} record-spec any?}}]
+  (fn [& args]
+    (let [[args & {:keys [trx] :or {trx db}}] (if (even? (count args)) (into [{}] args) args)
+          func (if (vector? args)
+                 (let [errors (reduce
+                                (fn [out record]
+                                  (try
+                                    (validate-args column-spec record)
+                                    out
+                                    (catch ExceptionInfo e
+                                      (concat out (vector (.getData e))))))
+                                [] args)]
+                   (when-not (empty? errors)
+                     (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
+                   #(jdbc/insert-multi! trx table args opts))
+                 (do
+                   (validate-args column-spec args)
+                   #(jdbc/insert! trx table args opts)))]
+      (try
+        (func)
+        (catch Throwable e
+          (throw (ExceptionInfo.
+                   "Database Error"
+                   {:message (.getMessage e)
+                    :type (type e)
+                    :stack-trace (.getStackTrace e)})))))))
+
+(def ^:private build-functions {:create build-inserter
+                                :read build-inquisitor
+                                :update build-updater
+                                :delete build-deleter
+                                :execute build-executor})
+
+(defn build-dao-service [db dao-spec]
+  (let [{:keys [functions errors]} (reduce-kv
+                    (fn [{:keys [functions errors]} label [call-type & args]]
+                      (if-let [func (get build-functions call-type)]
+                        {:functions (assoc functions label (apply func db args))
+                         :errors errors}
+                        {:functions functions
+                         :errors (conj errors label)}))
+                    {:functions {}
+                     :errors []}
+                    dao-spec)]
+    (when-not (empty? errors)
+      (throw (ExceptionInfo. "Invalid action types" {:labels errors})))
+    (fn [label & args]
+      (if-let [func (get functions label)]
+        (apply func args)
+        (throw (ExceptionInfo. "Invalid action in dao service" {:label label}))))))

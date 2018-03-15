@@ -147,7 +147,7 @@
         update-args (atom nil)]
     (with-redefs [jdbc/update! #(reset! update-args %&)]
       (update {:version "10" :action "F" :publisher "D00000000023456" :file_id 54321})
-      (is (= @update-args [db :datafile {:version "10" :action "F" :publisher "D00000000023456" :load_status "L"} [where 54321] {}]))
+      (is (= [db :datafile {:version "10" :action "F" :publisher "D00000000023456" :load_status "L"} [where 54321] {}] @update-args))
       (try
         (update {:version "10" :action "F" :publisher "D000000023456" :file_id 54321})
         (is false "should throw exception")
@@ -185,7 +185,7 @@
         update-args (atom nil)]
     (with-redefs [jdbc/update! #(reset! update-args %&)]
       (update {:version "10" :action "F" :publisher "D00000000023456" :file_id 54321})
-      (is (= @update-args [db :datafile {:version "10" :action "F" :publisher "D00000000023456" :load_status "L"} [where 54321] {}]))
+      (is (= [db :datafile {:version "10" :action "F" :publisher "D00000000023456" :load_status "L"} [where 54321] {}] @update-args))
       (try
         (update {:version "10" :action "F" :publisher "D000000023456" :file_id 54321})
         (is false "should throw exception")
@@ -287,3 +287,169 @@
               )
             )))
       )))
+
+(deftest test-dao-service
+  (let [db "This is the db!"
+        db-call (build-dao-service
+                  db {:get-customers [:read "select * from customers"]
+                      :get-from [:read (fn [{:keys [table-name]}] (str "select * from " table-name)) :arg-spec {:table-name :query/table-name}]
+                      :get-customer-by-id [:read ["select * from customers where customer_id = ?" :customer-id] :arg-spec {:customer-id int?}]
+                      :get-load-by-statuses [:read (fn [{:keys [statuses]}]
+                                                     (into [(str
+                                                              "select * from load where status in ("
+                                                              (str/join "," (repeat (count statuses) "?")) ")")]
+                                                           statuses))
+                                             :arg-spec {:statuses :load/statuses}]
+                      :delete-rfs-load-by-id [:delete :rfs_load ["rfs_load_id = ?" :rfs_load_id] :arg-spec {:rfs_load_id :rfs_load/id}]
+                      :update-datafile-from-header [:update :datafile {:version     #{"10" "30"}
+                                                                       :publisher   :datafile/publisher
+                                                                       :action      #{"F" "U"}}
+                                                    ["file_id = ?" :file_id]
+                                                    :arg-spec {:file_id int?}
+                                                    :fixed-values {:load_status "L"}]
+                      :create-customer-with-seq-id [:execute ["insert into customer (id,first_name,last_name) values (customer_id_seq(),?,?)"
+                                                              :first-name :last-name]
+                                                    :arg-spec {:first-name :customer/name
+                                                               :last-name :customer/name}]
+                      :create-customer [:create :customer
+                                        {:first-name    :customer/name
+                                         :last-name     :customer/name
+                                         :date-of-birth :customer/date-of-birth}]})
+        jdbc-args (atom nil)]
+    (with-redefs [jdbc/query #(reset! jdbc-args (into [:query] %&))
+                  jdbc/delete! #(reset! jdbc-args (into [:delete!] %&))
+                  jdbc/insert! #(reset! jdbc-args (into [:insert!] %&))
+                  jdbc/update! #(reset! jdbc-args (into [:update!] %&))
+                  jdbc/insert-multi! #(reset! jdbc-args (into [:insert-multi!] %&))
+                  jdbc/execute! #(reset! jdbc-args (into [:execute!] %&))]
+      (db-call :get-customers)
+      (is (= [:query db ["select * from customers"] {}] @jdbc-args))
+
+      (db-call :get-from {:table-name "a"})
+      (is (= [:query db ["select * from a"] {}] @jdbc-args))
+
+      (db-call :get-from {:table-name "customer"})
+      (is (= [:query db ["select * from customer"] {}] @jdbc-args))
+
+      (db-call :get-from {:table-name "form.load"})
+      (is (= [:query db ["select * from form.load"] {}] @jdbc-args))
+
+      (try
+        (db-call :get-from {:table-name "_customer"})
+        (is false "should throw exception")
+        (catch ExceptionInfo e
+          (let [{:keys [errors]} (.getData e)]
+            (is (= (count errors) 1))
+            (is (= :table-name (-> errors first :arg)))
+            (is (= "_customer" (-> errors first :val)))
+            (is (= "(common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str)))
+            )))
+
+      (db-call :get-customer-by-id {:customer-id 234})
+      (is (= [:query db ["select * from customers where customer_id = ?" 234] {}] @jdbc-args))
+
+      (db-call :get-load-by-statuses {:statuses (sorted-set "A" "B")})
+      (is (= [:query db ["select * from load where status in (?,?)" "A" "B"] {}] @jdbc-args))
+
+      (db-call :get-load-by-statuses {:statuses (sorted-set "A" "C" "D")})
+      (is (= [:query db ["select * from load where status in (?,?,?)" "A" "C" "D"] {}] @jdbc-args))
+
+      (db-call :delete-rfs-load-by-id {:rfs_load_id 15})
+      (is (= [:delete! db :rfs_load ["rfs_load_id = ?" 15] {}] @jdbc-args))
+
+      (try
+        (db-call :delete-rfs-load-by-id  {:rfs_load_id "15"})
+        (is false "should throw exception")
+        (catch ExceptionInfo e
+          (let [{:keys [errors]} (.getData e)]
+            (is (= (count errors) 1))
+            (is (= :rfs_load_id (-> errors first :arg)))
+            (is (= "15" (-> errors first :val)))
+            (is (= "clojure.core/int?" (-> errors first :cond str)))
+            )))
+
+      (try
+        (db-call :delete-rfs-load-by-id)
+        (is false "should throw exception")
+        (catch ExceptionInfo e
+          (let [{:keys [errors]} (.getData e)]
+            (is (= errors [{:missing-args #{:rfs_load_id}}])))))
+
+      (db-call :update-datafile-from-header {:version "10" :action "F" :publisher "D00000000023456" :file_id 54321})
+      (is (= [:update! db :datafile {:version "10" :action "F" :publisher "D00000000023456" :load_status "L"} ["file_id = ?" 54321] {}] @jdbc-args))
+
+      (try
+        (db-call :update-datafile-from-header {:version "10" :action "F" :publisher "D000000023456" :file_id 54321})
+        (is false "should throw exception")
+        (catch ExceptionInfo e
+          (let [{:keys [errors]} (.getData e)]
+            (is (= (count errors) 1))
+            (is (= :publisher (-> errors first :arg)))
+            (is (= "D000000023456" (-> errors first :val)))
+            (is (= "(common.validations/matches? #\"[DST]000000000[0-9][0-9][0-9][0-9][0-9]\")" (-> errors first :cond str)))
+            )))
+
+      (try
+        (db-call :update-datafile-from-header {:version "10" :action "A" :publisher "D00000000023456" :file_id 54321})
+        (is false "should throw exception")
+        (catch ExceptionInfo e
+          (let [{:keys [errors]} (.getData e)]
+            (is (= (count errors) 1))
+            (is (= :action (-> errors first :arg)))
+            (is (= "A" (-> errors first :val)))
+            (is (= #{"F" "U"} (-> errors first :cond)))
+            )))
+
+      (db-call :create-customer-with-seq-id {:first-name "Steve" :last-name "Dave"})
+      (is (= [:execute! db ["insert into customer (id,first_name,last_name) values (customer_id_seq(),?,?)" "Steve" "Dave"] {}] @jdbc-args))
+
+      (db-call :create-customer {:first-name "Steve"
+                                 :last-name "Dave"
+                                 :date-of-birth (t/date-time 1998 2 5)})
+      (let [[label insert-db table {:keys [first-name last-name date-of-birth]} opts] @jdbc-args]
+        (is (= label :insert!))
+        (is (= insert-db db))
+        (is (= table :customer))
+        (is (= first-name "Steve"))
+        (is (= last-name "Dave"))
+        (is (and (not (nil? date-of-birth)) (t/equal? date-of-birth (t/date-time 1998 2 5))))
+        (is (= opts {})))
+
+      (db-call :create-customer
+               [{:first-name "Steve"
+                :last-name "Dave"
+                :date-of-birth (t/date-time 1998 2 5)}
+               {:first-name "George"
+                :last-name "Kaplan"
+                :date-of-birth (t/date-time 1987 5 17)}])
+      (let [[label insert-db table [{:keys [first-name last-name date-of-birth]} {first :first-name last :last-name dob :date-of-birth}] opts] @jdbc-args]
+        (is (= label :insert-multi!))
+        (is (= insert-db db))
+        (is (= table :customer))
+        (is (= first-name "Steve"))
+        (is (= last-name "Dave"))
+        (is (and (not (nil? date-of-birth)) (t/equal? date-of-birth (t/date-time 1998 2 5))))
+        (is (= first "George"))
+        (is (= last "Kaplan"))
+        (is (and (not (nil? dob)) (t/equal? dob (t/date-time 1987 5 17))))
+        (is (= opts {})))
+
+      (try
+        (db-call :create-customer
+                 {:first-name "Steve"
+                  :last-name "Dave"
+                  :date-of-birth "1987-07-12"})
+        (is false "should throw exception")
+        (catch ExceptionInfo e
+          (let [{:keys [errors]} (.getData e)]
+            (is (= (count errors) 1))
+            (let [[{:keys [arg val cond]}] errors]
+              (is (= arg :date-of-birth))
+              (is (= val "1987-07-12"))
+              (is (= (str cond) "(clojure.core/partial clojure.core/instance? org.joda.time.DateTime)"))
+              )
+            )))
+
+      )))
+
+
