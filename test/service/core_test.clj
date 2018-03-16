@@ -24,12 +24,9 @@
         (is (= 1 (count data-list)))
         (is (= IllegalArgumentException type))
         (is (= "This is an exception" message))
-        (is (= #{:type :message :stack-trace} (set (keys data))))
-        (reduce #(println %2) nil stack-trace)
-        ))
+        (is (= #{:type :message :stack-trace} (set (keys data))))))
     (catch Throwable t
-      (is false "should throw ExceptionInfo")
-      (println t))))
+      (is false "should throw ExceptionInfo"))))
 
 (deftest test-inquisitor-simple
   (let [db "This is the db!"
@@ -53,15 +50,18 @@
         query-args (atom nil)]
     (with-redefs [jdbc/query #(do
                                 (reset! query-args %&)
-                                (throw (SQLException. error-message)))]
+                                (throw (Exception. error-message)))]
       (try
         (inquire)
         (catch Exception e
           (is (= @query-args [db [sql] {}]))
           (is (instance? ExceptionInfo e))
-          (let [{:keys [message type stack-trace] :as data} (.getData e)]
+          (let [{:keys [errors]} (.getData e)
+                {:keys [message type stack-trace] :as data} (first errors)]
+            (is (= 1 (count errors)))
             (is (= #{:message :type :stack-trace} (set (keys data))))
-            (is (= message ))
+            (is (= message error-message))
+            (is (= type Exception))
             ))))))
 
 (s/def :query/table-name (v/matches? #"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*"))
@@ -140,21 +140,11 @@
         query-args (atom nil)]
     (with-redefs [jdbc/query #(reset! query-args %&)]
 
-      (try
-        (inquire {:statuses (sorted-set "A" "B")})
-        (is (= @query-args [db ["select * from load where status in (?,?)" "A" "B"] {}]))
-        (catch ExceptionInfo e
-          (println (.getData e))
-          (is false "Should not throw exception")
-          ))
+      (inquire {:statuses (sorted-set "A" "B")})
+      (is (= @query-args [db ["select * from load where status in (?,?)" "A" "B"] {}]))
 
-      (try
-        (inquire {:statuses (sorted-set "A" "C" "D")})
-        (is (= @query-args [db ["select * from load where status in (?,?,?)" "A" "C" "D"] {}]))
-        (catch ExceptionInfo e
-          (println (.getData e))
-          (is false "Should not throw exception")
-          ))
+      (inquire {:statuses (sorted-set "A" "C" "D")})
+      (is (= @query-args [db ["select * from load where status in (?,?,?)" "A" "C" "D"] {}]))
 
       )))
 
@@ -318,41 +308,33 @@
         insert-multi-args (atom nil)]
     (with-redefs [jdbc/insert! #(reset! insert-args %&)
                   jdbc/insert-multi! #(reset! insert-multi-args %&)]
-      (try
-        (insert {:first-name "Steve"
-                 :last-name "Dave"
-                 :date-of-birth (t/date-time 1998 2 5)})
-        (let [[insert-db table {:keys [first-name last-name date-of-birth]} opts] @insert-args]
-          (is (= insert-db db))
-          (is (= table :customer))
-          (is (= first-name "Steve"))
-          (is (= last-name "Dave"))
-          (is (and (not (nil? date-of-birth)) (t/equal? date-of-birth (t/date-time 1998 2 5))))
-          (is (= opts {})))
-        (catch ExceptionInfo e
-          (println (pr-str (.getData e)))
-          ))
+      (insert {:first-name "Steve"
+               :last-name "Dave"
+               :date-of-birth (t/date-time 1998 2 5)})
+      (let [[insert-db table {:keys [first-name last-name date-of-birth]} opts] @insert-args]
+        (is (= insert-db db))
+        (is (= table :customer))
+        (is (= first-name "Steve"))
+        (is (= last-name "Dave"))
+        (is (and (not (nil? date-of-birth)) (t/equal? date-of-birth (t/date-time 1998 2 5))))
+        (is (= opts {})))
 
-      (try
-        (insert [{:first-name "Steve"
-                  :last-name "Dave"
-                  :date-of-birth (t/date-time 1998 2 5)}
-                 {:first-name "George"
-                  :last-name "Kaplan"
-                  :date-of-birth (t/date-time 1987 5 17)}])
-        (let [[insert-db table [{:keys [first-name last-name date-of-birth]} {first :first-name last :last-name dob :date-of-birth}] opts] @insert-multi-args]
-          (is (= insert-db db))
-          (is (= table :customer))
-          (is (= first-name "Steve"))
-          (is (= last-name "Dave"))
-          (is (and (not (nil? date-of-birth)) (t/equal? date-of-birth (t/date-time 1998 2 5))))
-          (is (= first "George"))
-          (is (= last "Kaplan"))
-          (is (and (not (nil? dob)) (t/equal? dob (t/date-time 1987 5 17))))
-          (is (= opts {})))
-        (catch ExceptionInfo e
-          (println (pr-str (.getData e)))
-          ))
+      (insert [{:first-name "Steve"
+                :last-name "Dave"
+                :date-of-birth (t/date-time 1998 2 5)}
+               {:first-name "George"
+                :last-name "Kaplan"
+                :date-of-birth (t/date-time 1987 5 17)}])
+      (let [[insert-db table [{:keys [first-name last-name date-of-birth]} {first :first-name last :last-name dob :date-of-birth}] opts] @insert-multi-args]
+        (is (= insert-db db))
+        (is (= table :customer))
+        (is (= first-name "Steve"))
+        (is (= last-name "Dave"))
+        (is (and (not (nil? date-of-birth)) (t/equal? date-of-birth (t/date-time 1998 2 5))))
+        (is (= first "George"))
+        (is (= last "Kaplan"))
+        (is (and (not (nil? dob)) (t/equal? dob (t/date-time 1987 5 17))))
+        (is (= opts {})))
 
       (try
         (insert {:first-name "Steve"
