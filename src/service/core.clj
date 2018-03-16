@@ -2,7 +2,8 @@
   (:require [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.java.jdbc :as jdbc])
-  (:import (clojure.lang ExceptionInfo)))
+  (:import (clojure.lang ExceptionInfo)
+           (java.sql SQLException)))
 
 (defn- validate-item [spec item label]
   (if-let [{out-spec :clojure.spec.alpha/spec problems :clojure.spec.alpha/problems} (s/explain-data spec item)]
@@ -30,13 +31,51 @@
       (throw (ExceptionInfo. "Missing Args" {:missing-args missing-args})))
     (into [(first query)] (mapv (partial get args) (rest query)))))
 
+(defn- build-errors [x message next-fn obj-map]
+  (throw (ExceptionInfo.
+           message
+           {:errors
+            (loop [e x
+                   out []]
+              (if (nil? e)
+                out
+                (recur (next-fn e)
+                       (concat out
+                               (vector
+                                 (reduce-kv
+                                   #(if-let [result (%3 e)]
+                                      (assoc %1 %2 (%3 e))
+                                      %1)
+                                   {} obj-map))))))})))
+
+(defn stack-trace-elem [^StackTraceElement elem]
+  {:class (.getClassName elem)
+   :method (.getMethodName elem)
+   :file (.getFileName elem)
+   :line (.getLineNumber elem)})
+
+(defn wrap-try [func]
+  (try
+     (func)
+     (catch SQLException e
+       (build-errors e "SQLException thrown"
+                     #(.getNextException ^SQLException %)
+                     {:error-code #(.getErrorCode ^SQLException %)
+                      :sql-state #(.getSQLState ^SQLException %)
+                      :message #(.getMessage ^SQLException %)
+                      :stack-trace #(mapv stack-trace-elem (.getStackTrace ^SQLException %))}))
+     (catch Throwable e
+       (build-errors e "Database Error"
+                     #(.getCause %)
+                     {:type #(type %)
+                      :message #(.getMessage %)
+                      :stack-trace #(mapv stack-trace-elem (.getStackTrace %))}))))
+
 (defn- build-basic
   ([db jdbc-func sql-params arg-spec obj-spec]
     (build-basic db jdbc-func [arg-spec {}] sql-params arg-spec obj-spec {}))
   ([db jdbc-func arg-select-objects sql-params arg-spec obj-spec fixed-values]
-   (let [sql-params (if (string? sql-params)
-                      [sql-params]
-                      sql-params)
+   (let [sql-params (if (string? sql-params) [sql-params] sql-params)
          func (if (coll? sql-params)
                 (partial substitute-args sql-params)
                 (fn [args]
@@ -54,14 +93,7 @@
             (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
           (let [[args cols] (mapv #(select-keys args (keys %)) arg-select-objects)
                 query (func args)]
-            (try
-              (jdbc-func trx cols query)
-              (catch Throwable e
-                (throw (ExceptionInfo.
-                         "Database Error"
-                         {:message (.getMessage e)
-                          :type (type e)
-                          :stack-trace (.getStackTrace e)})))))))))))
+            (wrap-try #(jdbc-func trx cols query)))))))))
 
 (defn- fixed-validator [fixed-vals]
   (reduce-kv #(assoc %1 %2 (set (vector %3))) {} fixed-vals))
@@ -95,14 +127,7 @@
                    (when-not (empty? errors)
                      (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
                    #(jdbc/insert! trx table args opts)))]
-      (try
-        (func)
-        (catch Throwable e
-          (throw (ExceptionInfo.
-                   "Database Error"
-                   {:message (.getMessage e)
-                    :type (type e)
-                    :stack-trace (.getStackTrace e)})))))))
+      (wrap-try #(func)))))
 
 (def ^:private build-functions {:create build-inserter
                                 :read build-inquisitor

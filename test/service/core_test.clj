@@ -5,27 +5,98 @@
             [common.validations :as v]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
+            [honeysql.core :as honey]
+            [service.helpers :as h]
             [clj-time.core :as t])
   (:import (clojure.lang ExceptionInfo)
            (java.time DateTimeException)
            (java.util Formatter$DateTime)
-           (org.joda.time DateTime)))
+           (org.joda.time DateTime)
+           (java.sql SQLException)))
+
+(deftest test-wrap-try
+  (try
+    (wrap-try #(throw (IllegalArgumentException. "This is an exception")))
+    (catch ExceptionInfo i
+      (is (= "Database Error" (.getMessage i)))
+      (let [{data-list :errors} (.getData i)
+            {:keys [type message stack-trace] :as data} (first data-list)]
+        (is (= 1 (count data-list)))
+        (is (= IllegalArgumentException type))
+        (is (= "This is an exception" message))
+        (is (= #{:type :message :stack-trace} (set (keys data))))
+        (reduce #(println %2) nil stack-trace)
+        ))
+    (catch Throwable t
+      (is false "should throw ExceptionInfo")
+      (println t))))
 
 (deftest test-inquisitor-simple
   (let [db "This is the db!"
         sql "select * from customers"
         inquire (build-inquisitor db sql)
+        expected-results [5 4 3 2 1]
         query-args (atom nil)]
-    (with-redefs [jdbc/query #(reset! query-args %&)]
-      (inquire)
-      (is (= @query-args [db [sql] {}]))
-      )))
+    (with-redefs [jdbc/query #(do
+                                (reset! query-args %&)
+                                expected-results)]
+      (let [results (inquire)]
+        (is (= results expected-results))
+        (is (= @query-args [db [sql] {}]))))))
+
+(deftest test-inquisitor-simple
+  (let [db "This is the db!"
+        sql "select * from customers"
+        error-message "this is a sql exception."
+        inquire (build-inquisitor db sql)
+        expected-results [5 4 3 2 1]
+        query-args (atom nil)]
+    (with-redefs [jdbc/query #(do
+                                (reset! query-args %&)
+                                (throw (SQLException. error-message)))]
+      (try
+        (inquire)
+        (catch Exception e
+          (is (= @query-args [db [sql] {}]))
+          (is (instance? ExceptionInfo e))
+          (let [{:keys [message type stack-trace] :as data} (.getData e)]
+            (is (= #{:message :type :stack-trace} (set (keys data))))
+            (is (= message ))
+            ))))))
 
 (s/def :query/table-name (v/matches? #"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*"))
 
 (deftest test-inquisitor-w-function
   (let [db "This is the db!"
         sql (fn [{:keys [table-name]}] (str "select * from " table-name))
+        inquire (build-inquisitor db sql :arg-spec {:table-name :query/table-name})
+        query-args (atom nil)]
+    (with-redefs [jdbc/query #(reset! query-args %&)]
+
+      (inquire {:table-name "a"})
+      (is (= @query-args [db ["select * from a"] {}]))
+
+      (inquire {:table-name "customer"})
+      (is (= @query-args [db ["select * from customer"] {}]))
+
+      (inquire {:table-name "form.load"})
+      (is (= @query-args [db ["select * from form.load"] {}]))
+
+      (try
+        (inquire {:table-name "_customer"})
+        (is false "should throw exception")
+        (catch ExceptionInfo e
+          (let [{:keys [errors]} (.getData e)]
+            (is (= (count errors) 1))
+            (is (= :table-name (-> errors first :label)))
+            (is (= "_customer" (-> errors first :val)))
+            (is (= "(common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str)))
+            )))
+      )))
+
+(deftest test-inquisitor-w-honeysql
+  (let [db "This is the db!"
+        sql (h/tpl "select * from %s" :table-name)
         inquire (build-inquisitor db sql :arg-spec {:table-name :query/table-name})
         query-args (atom nil)]
     (with-redefs [jdbc/query #(reset! query-args %&)]
@@ -64,20 +135,26 @@
 
 (deftest test-inquisitor-where-in-fn
   (let [db "This is the db!"
-        sql-fn (fn [{:keys [statuses]}]
-                 (into [(str
-                          "select * from load where status in ("
-                          (str/join "," (repeat (count statuses) "?")) ")")]
-                       statuses))
+        sql-fn (h/tpl "select * from load where %s" (h/where-in-list "status" :statuses))
         inquire (build-inquisitor db sql-fn :arg-spec {:statuses :load/statuses})
         query-args (atom nil)]
     (with-redefs [jdbc/query #(reset! query-args %&)]
 
-      (inquire {:statuses (sorted-set "A" "B")})
-      (is (= @query-args [db ["select * from load where status in (?,?)" "A" "B"] {}]))
+      (try
+        (inquire {:statuses (sorted-set "A" "B")})
+        (is (= @query-args [db ["select * from load where status in (?,?)" "A" "B"] {}]))
+        (catch ExceptionInfo e
+          (println (.getData e))
+          (is false "Should not throw exception")
+          ))
 
-      (inquire {:statuses (sorted-set "A" "C" "D")})
-      (is (= @query-args [db ["select * from load where status in (?,?,?)" "A" "C" "D"] {}]))
+      (try
+        (inquire {:statuses (sorted-set "A" "C" "D")})
+        (is (= @query-args [db ["select * from load where status in (?,?,?)" "A" "C" "D"] {}]))
+        (catch ExceptionInfo e
+          (println (.getData e))
+          (is false "Should not throw exception")
+          ))
 
       )))
 
@@ -147,7 +224,12 @@
         update-args (atom nil)]
     (with-redefs [jdbc/update! #(reset! update-args %&)]
       (update {:version "10" :action "F" :publisher "D00000000023456" :file_id 54321})
-      (is (= [db :datafile {:version "10" :action "F" :publisher "D00000000023456" :load_status "L"} [where 54321] {}] @update-args))
+      (is (= [db :datafile {:version "10"
+                            :action "F"
+                            :publisher "D00000000023456"
+                            :load_status "L"}
+              [where 54321] {}]
+             @update-args))
       (try
         (update {:version "10" :action "F" :publisher "D000000023456" :file_id 54321})
         (is false "should throw exception")
@@ -292,13 +374,9 @@
   (let [db "This is the db!"
         db-call (build-dao-service
                   db {:get-customers [:read "select * from customers"]
-                      :get-from [:read (fn [{:keys [table-name]}] (str "select * from " table-name)) :arg-spec {:table-name :query/table-name}]
+                      :get-from [:read (h/tpl "select * from %s" :table-name) :arg-spec {:table-name :query/table-name}]
                       :get-customer-by-id [:read ["select * from customers where customer_id = ?" :customer-id] :arg-spec {:customer-id int?}]
-                      :get-load-by-statuses [:read (fn [{:keys [statuses]}]
-                                                     (into [(str
-                                                              "select * from load where status in ("
-                                                              (str/join "," (repeat (count statuses) "?")) ")")]
-                                                           statuses))
+                      :get-load-by-statuses [:read (h/tpl "select * from load where %s" (h/where-in-list "status" :statuses))
                                              :arg-spec {:statuses :load/statuses}]
                       :delete-rfs-load-by-id [:delete :rfs_load ["rfs_load_id = ?" :rfs_load_id] :arg-spec {:rfs_load_id :rfs_load/id}]
                       :update-datafile-from-header [:update :datafile {:version     #{"10" "30"}
