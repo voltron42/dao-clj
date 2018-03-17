@@ -357,9 +357,15 @@
         db-call (build-dao-service
                   db {:get-customers [:read "select * from customers"]
                       :get-from [:read (h/tpl "select * from %s" :table-name) :arg-spec {:table-name :query/table-name}]
+                      :get-from-by-id [:read (h/tpl "select * from %s where %s = ?" :table-name :id-name :+/id) :arg-spec {:table-name :query/table-name
+                                                                                                                           :id-name :query/table-name
+                                                                                                                           :id int?}]
                       :get-customer-by-id [:read ["select * from customers where customer_id = ?" :customer-id] :arg-spec {:customer-id int?}]
                       :get-load-by-statuses [:read (h/tpl "select * from load where %s" (h/where-in-list "status" :statuses))
                                              :arg-spec {:statuses :load/statuses}]
+                      :get-load-by-statuses-and-action [:read (h/tpl "select * from load where action = ? and %s" :+/action (h/where-in-list "status" :statuses))
+                                                        :arg-spec {:statuses :load/statuses
+                                                                   :action #{"C" "R" "U" "D"}}]
                       :delete-rfs-load-by-id [:delete :rfs_load ["rfs_load_id = ?" :rfs_load_id] :arg-spec {:rfs_load_id :rfs_load/id}]
                       :update-datafile-from-header [:update :datafile {:version     #{"10" "30"}
                                                                        :publisher   :datafile/publisher

@@ -1,6 +1,8 @@
 (ns service.helpers-test
   (:require [clojure.test :refer :all]
-            [service.helpers :as h]))
+            [service.helpers :as h]
+            [honeysql.core :as honey]
+            [honeysql.format :as fmt]))
 
 (deftest test-tpl
   (let [sql-fn (h/tpl "select * from %s" :table-name)]
@@ -45,3 +47,8 @@
            ["select * from load where id = ? and status in (?,?,?)" "def" "A" "C" "D"]))
 
     ))
+
+(deftest test-formatter
+  (println
+    (honey/format {:where [:in :a ]})))
+
