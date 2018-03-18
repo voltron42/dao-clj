@@ -3,6 +3,10 @@
             [service.honey :refer :all]
             [honeysql.core :as sql]))
 
+(deftest test-q-mark
+  (println (pr-str (sql/format {:select [:*] :from [:?/table-name]} {:table-name :customers})))
+  )
+
 (deftest test-override-in
   (println (pr-str (sql/format {:where [:in :a.id {:select [:id] :from [:customers] :where [:< :b 25]}]})))
   (println (pr-str (sql/format {:where [:in :a.id [1 2 3]]})))
