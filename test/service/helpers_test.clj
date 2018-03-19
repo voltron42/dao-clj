@@ -40,16 +40,10 @@
 (deftest test-where-in-list-w-args-prior
   (let [sql-fn (h/tpl "select * from load where id = ? and %s" :?/id (h/where-in-list "status" :statuses))]
 
-    (is (= (sql-fn {:statuses (sorted-set "A" "B") :id 534})
+    (is (= (sql-fn {:statuses ["A" "B"] :id 534})
            ["select * from load where id = ? and status in (?,?)" 534 "A" "B"]))
 
-    (is (= (sql-fn {:statuses (sorted-set "A" "C" "D") :id "def"})
+    (is (= (sql-fn {:statuses ["A" "C" "D"] :id "def"})
            ["select * from load where id = ? and status in (?,?,?)" "def" "A" "C" "D"]))
 
     ))
-
-(deftest test-formatter
-  (println
-    (pr-str
-      (honey/format {:where [:in :a :?abc]} {:abc [2 3 4 5]}))))
-

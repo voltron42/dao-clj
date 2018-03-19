@@ -360,7 +360,7 @@
                       :get-from [:read (h/tpl "select * from %s" :table-name)
                                  :arg-spec {:table-name :query/table-name}]
 
-                      :get-from-by-id [:read (h/tpl "select * from %s where %s = ?" :table-name :id-name :id)
+                      :get-from-by-id [:read (h/tpl "select * from %s where %s = ?" :table-name :id-name :?/id)
                                        :arg-spec {:table-name :query/table-name
                                                   :id-name :query/table-name
                                                   :id int?}]
@@ -381,7 +381,7 @@
                                                                          :where [:in :action :?actions]})
                                             :arg-spec {:actions :load/statuses}]
 
-                      :get-load-by-statuses-and-action [:read (h/tpl "select * from load where action = ? and %s" :action (h/where-in-list "status" :statuses))
+                      :get-load-by-statuses-and-action [:read (h/tpl "select * from load where action = ? and %s" :?/action (h/where-in-list "status" :statuses))
                                                         :arg-spec {:statuses :load/statuses
                                                                    :action #{"C" "R" "U" "D"}}]
 
