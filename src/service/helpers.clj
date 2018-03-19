@@ -4,7 +4,7 @@
 (defn tpl [query-str & vars]
   (fn [args]
     (let [values (mapv
-                   #(let [result (if (and (keyword? %) (= "+" (namespace %))) [nil (get args (keyword (name %)))] (% args))
+                   #(let [result (if (and (keyword? %) (= "?" (namespace %))) [nil (get args (keyword (name %)))] (% args))
                           [query & vars] (if (string? result) [result] result)
                           vars (if (nil? vars) [] vars)]
                       {:query query :vars vars}) vars)
