@@ -1,7 +1,9 @@
 (ns service.core
   (:require [clojure.set :as set]
             [clojure.spec.alpha :as s]
-            [clojure.java.jdbc :as jdbc])
+            [clojure.java.jdbc :as jdbc]
+            [clojure.string :as str]
+            [util.exceptions :as x])
   (:import (clojure.lang ExceptionInfo)
            (java.sql SQLException)))
 
@@ -31,103 +33,74 @@
       (throw (ExceptionInfo. "Missing Args" {:missing-args missing-args})))
     (into [(first query)] (mapv (partial get args) (rest query)))))
 
-(defn- build-errors [x message next-fn obj-map]
-  (throw (ExceptionInfo.
-           message
-           {:errors
-            (loop [e x
-                   out []]
-              (if (nil? e)
-                out
-                (recur (next-fn e)
-                       (concat out
-                               (vector
-                                 (reduce-kv
-                                   #(if-let [result (%3 e)]
-                                      (assoc %1 %2 (%3 e))
-                                      %1)
-                                   {} obj-map))))))})))
-
-(defn stack-trace-elem [^StackTraceElement elem]
-  {:class (.getClassName elem)
-   :method (.getMethodName elem)
-   :file (.getFileName elem)
-   :line (.getLineNumber elem)})
-
-(defn wrap-try [func]
-  (try
-     (func)
-     (catch SQLException e
-       (build-errors e "SQLException thrown"
-                     #(.getNextException ^SQLException %)
-                     {:error-code #(.getErrorCode ^SQLException %)
-                      :sql-state #(.getSQLState ^SQLException %)
-                      :message #(.getMessage ^SQLException %)
-                      :stack-trace #(mapv stack-trace-elem (.getStackTrace ^SQLException %))}))
-     (catch Throwable e
-       (build-errors e "Database Error"
-                     #(.getCause %)
-                     {:type #(type %)
-                      :message #(.getMessage %)
-                      :stack-trace #(mapv stack-trace-elem (.getStackTrace %))}))))
 
 (defn- build-basic
-  ([db jdbc-func sql-params arg-spec obj-spec]
-    (build-basic db jdbc-func [arg-spec {}] sql-params arg-spec obj-spec {}))
-  ([db jdbc-func arg-select-objects sql-params arg-spec obj-spec fixed-values]
-   (let [sql-params (if (string? sql-params) [sql-params] sql-params)
+  ([db jdbc-func sql-params arg-spec obj-spec default-flag-map opt-names]
+    (build-basic db jdbc-func [arg-spec {}] sql-params arg-spec obj-spec {} default-flag-map opt-names))
+  ([db jdbc-func arg-select-objects sql-params arg-spec obj-spec fixed-values default-flag-map opt-names]
+   (let [default-opts (select-keys default-flag-map opt-names)
+         sql-params (if (string? sql-params) [sql-params] sql-params)
          func (if (coll? sql-params)
                 (partial substitute-args sql-params)
                 (fn [args]
                   (let [result (sql-params args)
                         result (if (string? result) [result] result)]
                     (when-not (vector? result)
-                      (throw (ExceptionInfo. "Resulting of sql building function must be either a string or vector" {:sql result :type (type result)})))
+                      (throw (ExceptionInfo. "Resulting of sql building function must be either a string or vector"
+                                             {:sql result :type (type result)})))
                     result)))]
      (fn my-func
        ([& args]
-        (let [[args & {:keys [trx] :or {trx db}}] (if (even? (count args)) (into [{}] args) args)
+        (let [[args & {:keys [trx] :or {trx db} :as flag-map}] (if (even? (count args)) (into [{}] args) args)
+              opts (merge default-opts (select-keys flag-map opt-names))
               args (merge args fixed-values)
               errors (validate-args arg-spec args)]
           (when-not (empty? errors)
             (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
           (let [[args cols] (mapv #(select-keys args (keys %)) arg-select-objects)
                 query (func args)]
-            (wrap-try #(jdbc-func trx cols query)))))))))
+            (x/try-catch (jdbc-func trx cols query opts)))))))))
 
 (defn- fixed-validator [fixed-vals]
   (reduce-kv #(assoc %1 %2 (set (vector %3))) {} fixed-vals))
 
-(defn build-inquisitor [db sql-params & {:keys [opts arg-spec obj-spec] :or {opts {} arg-spec {} obj-spec any?}}]
-  (build-basic db #(jdbc/query %1 %3 opts) sql-params arg-spec obj-spec))
+(defn build-inquisitor [db sql-params & {:keys [arg-spec obj-spec] :or {arg-spec {} obj-spec any?} :as flags}]
+  (build-basic db #(jdbc/query %1 %3 %4) sql-params arg-spec obj-spec flags [:as-arrays? :identifiers :keywordize? :qualifier :result-set-fn :row-fn]))
 
-(defn build-deleter [db table where-clause & {:keys [opts arg-spec obj-spec] :or {opts {} arg-spec {}}}]
-  (build-basic db #(jdbc/delete! %1 table %3 opts) where-clause arg-spec obj-spec))
+(defn build-deleter [db table where-clause & {:keys [arg-spec obj-spec] :or {arg-spec {}} :as flags}]
+  (build-basic db #(jdbc/delete! %1 table %3 %4) where-clause arg-spec obj-spec flags [:transaction? :multi?]))
 
-(defn build-updater [db table column-spec where-clause & {:keys [opts arg-spec fixed-values record-spec] :or {opts {} arg-spec {} fixed-values {}}}]
-  (build-basic db #(jdbc/update! %1 table %2 %3 opts) [arg-spec (merge column-spec fixed-values)] where-clause (merge column-spec arg-spec (fixed-validator fixed-values)) record-spec fixed-values))
+(defn build-updater [db table column-spec where-clause & {:keys [arg-spec fixed-values record-spec] :or {arg-spec {} fixed-values {}} :as flags}]
+  (build-basic db #(jdbc/update! %1 table %2 %3 %4)
+               [arg-spec (merge column-spec fixed-values)]
+               where-clause
+               (merge column-spec arg-spec (fixed-validator fixed-values))
+               record-spec fixed-values flags [:transaction? :multi?]))
 
-(defn build-executor [db sql-params & {:keys [opts arg-spec obj-spec] :or {opts {} arg-spec {} obj-spec any?}}]
-  (build-basic db #(jdbc/execute! %1 %3 opts) sql-params arg-spec obj-spec))
+(defn build-executor [db sql-params & {:keys [arg-spec obj-spec] :or {arg-spec {} obj-spec any?} :as flags}]
+  (build-basic db #(jdbc/execute! %1 %3 %4) sql-params arg-spec obj-spec flags [:transaction? :multi?]))
 
-(defn build-inserter [db table column-spec & {:keys [opts record-spec] :or {opts {} record-spec any?}}]
-  (fn [& args]
-    (let [[args & {:keys [trx] :or {trx db}}] (if (even? (count args)) (into [{}] args) args)
-          func (if (vector? args)
-                 (let [errors (reduce
-                                (fn [out record]
-                                  (concat out
-                                          (validate-item record-spec record :full-record)
-                                          (validate-args column-spec record)))
-                                [] args)]
-                   (when-not (empty? errors)
-                     (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
-                   #(jdbc/insert-multi! trx table args opts))
-                 (let [errors (validate-args column-spec args)]
-                   (when-not (empty? errors)
-                     (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
-                   #(jdbc/insert! trx table args opts)))]
-      (wrap-try #(func)))))
+(defn build-inserter [db table column-spec & {:keys [record-spec] :or {record-spec any?} :as flags-default}]
+  (let [opt-names [:transaction? :entities]
+        opts-default (select-keys flags-default opt-names)]
+    (fn [& args]
+      (let [[args & {:keys [trx] :or {trx db} :as flags}] (if (even? (count args)) (into [{}] args) args)
+            opts (merge opts-default (select-keys flags opt-names))
+            func (if (vector? args)
+                   (let [errors (reduce
+                                  (fn [out record]
+                                    (concat out
+                                            (validate-item record-spec record :full-record)
+                                            (validate-args column-spec record)))
+                                  [] args)]
+                     (when-not (empty? errors)
+                       (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
+                     #(jdbc/insert-multi! trx table args opts))
+                   (let [errors (validate-args column-spec args)]
+                     (when-not (empty? errors)
+                       (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
+                     #(jdbc/insert! trx table args opts)))]
+        (x/try-catch (func))))))
 
 (def ^:private build-functions {:create build-inserter
                                 :read build-inquisitor

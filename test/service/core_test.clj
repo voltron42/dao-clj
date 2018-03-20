@@ -7,7 +7,8 @@
             [clojure.string :as str]
             [honeysql.core :as honey]
             [service.helpers :as h]
-            [clj-time.core :as t])
+            [clj-time.core :as t]
+            [util.exceptions :as x])
   (:import (clojure.lang ExceptionInfo)
            (java.time DateTimeException)
            (java.util Formatter$DateTime)
@@ -16,20 +17,19 @@
 
 (deftest test-wrap-try
   (try
-    (wrap-try #(throw (IllegalArgumentException. "This is an exception")))
+    (x/try-catch (throw (IllegalArgumentException. "This is an exception")))
     (catch ExceptionInfo i
-      (is (= "Database Error" (.getMessage i)))
-      (let [{data-list :errors} (.getData i)
-            {:keys [type message stack-trace] :as data} (first data-list)]
-        (is (= 1 (count data-list)))
-        (is (= IllegalArgumentException type))
-        (is (= "This is an exception" message))
-        (is (= #{:type :message :stack-trace} (set (keys data))))))
+      (is (= "java.lang.IllegalArgumentException: This is an exception" (.getMessage i)))
+      (let [{:keys [type message stack-trace] :as data} (.getData i)]
+        (is (= #{:type :message :stack-trace} (set (keys data))))
+        (is (= "class java.lang.IllegalArgumentException" type))
+        (is (= "This is an exception" message))))
     (catch Throwable t
       (is false "should throw ExceptionInfo"))))
 
 (deftest test-inquisitor-simple
   (let [db "This is the db!"
+        trx "This is a transaction!"
         sql "select * from customers"
         inquire (build-inquisitor db sql)
         expected-results [5 4 3 2 1]
@@ -39,9 +39,37 @@
                                 expected-results)]
       (let [results (inquire)]
         (is (= results expected-results))
-        (is (= @query-args [db [sql] {}]))))))
+        (is (= @query-args [db [sql] {}])))
 
-(deftest test-inquisitor-simple
+      (let [results (inquire :trx trx)]
+        (is (= results expected-results))
+        (is (= @query-args [trx [sql] {}]))))))
+
+(deftest test-inquisitor-simple-w-opts
+  (let [db "This is the db!"
+        trx "This is a transaction!"
+        sql "select * from customers"
+        row-fn #(select-keys % [:id :first-name :last-name])
+        result-set-fn (partial group-by :last-name)
+        opts {:row-fn row-fn
+              :result-set-fn result-set-fn}
+        inquire (build-inquisitor db sql
+                  :row-fn row-fn
+                  :result-set-fn result-set-fn)
+        expected-results [5 4 3 2 1]
+        query-args (atom nil)]
+    (with-redefs [jdbc/query #(do
+                                (reset! query-args %&)
+                                expected-results)]
+      (let [results (inquire)]
+        (is (= results expected-results))
+        (is (= @query-args [db [sql] opts])))
+
+      (let [results (inquire :trx trx)]
+        (is (= results expected-results))
+        (is (= @query-args [trx [sql] opts]))))))
+
+(deftest test-inquisitor-simple-w-exception
   (let [db "This is the db!"
         sql "select * from customers"
         error-message "this is a sql exception."
@@ -56,13 +84,10 @@
         (catch Exception e
           (is (= @query-args [db [sql] {}]))
           (is (instance? ExceptionInfo e))
-          (let [{:keys [errors]} (.getData e)
-                {:keys [message type stack-trace] :as data} (first errors)]
-            (is (= 1 (count errors)))
+          (let [{:keys [message type stack-trace] :as data} (.getData e)]
             (is (= #{:message :type :stack-trace} (set (keys data))))
             (is (= message error-message))
-            (is (= type Exception))
-            ))))))
+            (is (= type "class java.lang.Exception"))))))))
 
 (s/def :query/table-name (v/matches? #"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*"))
 
@@ -90,9 +115,7 @@
             (is (= (count errors) 1))
             (is (= :table-name (-> errors first :label)))
             (is (= "_customer" (-> errors first :val)))
-            (is (= "(common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str)))
-            )))
-      )))
+            (is (= "(common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str)))))))))
 
 (deftest test-inquisitor-w-honeysql
   (let [db "This is the db!"
@@ -118,9 +141,7 @@
             (is (= (count errors) 1))
             (is (= :table-name (-> errors first :label)))
             (is (= "_customer" (-> errors first :val)))
-            (is (= "(common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str)))
-            )))
-      )))
+            (is (= "(common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str)))))))))
 
 (deftest test-inquisitor-w-args
   (let [db "This is the db!"
@@ -144,18 +165,19 @@
       (is (= @query-args [db ["select * from load where status in (?,?)" "A" "B"] {}]))
 
       (inquire {:statuses (sorted-set "A" "C" "D")})
-      (is (= @query-args [db ["select * from load where status in (?,?,?)" "A" "C" "D"] {}]))
-
-      )))
+      (is (= @query-args [db ["select * from load where status in (?,?,?)" "A" "C" "D"] {}])))))
 
 (deftest test-deleter-generic
   (let [db "This is the db!"
+        trx "This is a transaction!"
         where "rfs_load_id = ?"
         delete (build-deleter db :rfs_load [where :rfs_load_id] :arg-spec {:rfs_load_id int?})
         delete-args (atom nil)]
     (with-redefs [jdbc/delete! #(reset! delete-args %&)]
       (delete {:rfs_load_id 15})
       (is (= @delete-args [db :rfs_load [where 15] {}]))
+      (delete {:rfs_load_id 15} :trx trx)
+      (is (= @delete-args [trx :rfs_load [where 15] {}]))
       (try
         (delete {:rfs_load_id "15"})
         (is false "should throw exception")
@@ -165,8 +187,7 @@
             (is (= :rfs_load_id (-> errors first :label)))
             (is (= "15" (-> errors first :val)))
             (is (not= "clojure.core/int?" (-> errors first :cond str)))
-            (is (= (type int?) (-> errors first :cond type)))
-            )))
+            (is (= (type int?) (-> errors first :cond type))))))
       (try
         (delete)
         (is false "should throw exception")
@@ -192,8 +213,7 @@
             (is (= (count errors) 1))
             (is (= :rfs_load_id (-> errors first :label)))
             (is (= "15" (-> errors first :val)))
-            (is (= "clojure.core/int?" (-> errors first :cond str)))
-            )))
+            (is (= "clojure.core/int?" (-> errors first :cond str))))))
       (try
         (delete)
         (is false "should throw exception")
@@ -203,6 +223,7 @@
 
 (deftest test-updater-generic
   (let [db "This is the db!"
+        trx "This is a transaction!"
         where "file_id = ?"
         update (build-updater db :datafile
                               {:version     #{"10" "30"}
@@ -213,8 +234,22 @@
                               :fixed-values {:load_status "L"})
         update-args (atom nil)]
     (with-redefs [jdbc/update! #(reset! update-args %&)]
-      (update {:version "10" :action "F" :publisher "D00000000023456" :file_id 54321})
+      (update {:version "10"
+               :action "F"
+               :publisher "D00000000023456"
+               :file_id 54321})
       (is (= [db :datafile {:version "10"
+                            :action "F"
+                            :publisher "D00000000023456"
+                            :load_status "L"}
+              [where 54321] {}]
+             @update-args))
+      (update {:version "10"
+               :action "F"
+               :publisher "D00000000023456"
+               :file_id 54321}
+              :trx trx)
+      (is (= [trx :datafile {:version "10"
                             :action "F"
                             :publisher "D00000000023456"
                             :load_status "L"}
@@ -229,8 +264,8 @@
             (is (= :publisher (-> errors first :label)))
             (is (= "D000000023456" (-> errors first :val)))
             (is (not= "(common.validations/matches? #\"[DST]000000000[0-9][0-9][0-9][0-9][0-9]\")" (-> errors first :cond str)))
-            (is (= (type (v/matches? #"[DST]000000000[0-9][0-9][0-9][0-9][0-9]")) (-> errors first :cond type)))
-            )))
+            (is (= (type (v/matches? #"[DST]000000000[0-9][0-9][0-9][0-9][0-9]")) (-> errors first :cond type))))))
+
       (try
         (update {:version "10" :action "A" :publisher "D00000000023456" :file_id 54321})
         (is false "should throw exception")
@@ -239,9 +274,7 @@
             (is (= (count errors) 1))
             (is (= :action (-> errors first :label)))
             (is (= "A" (-> errors first :val)))
-            (is (= #{"F" "U"} (-> errors first :cond)))
-            )))
-      )))
+            (is (= #{"F" "U"} (-> errors first :cond)))))))))
 
 (s/def :datafile/publisher (v/matches? #"[DST]000000000[0-9][0-9][0-9][0-9][0-9]"))
 
@@ -256,8 +289,10 @@
                               :fixed-values {:load_status "L"})
         update-args (atom nil)]
     (with-redefs [jdbc/update! #(reset! update-args %&)]
+
       (update {:version "10" :action "F" :publisher "D00000000023456" :file_id 54321})
       (is (= [db :datafile {:version "10" :action "F" :publisher "D00000000023456" :load_status "L"} [where 54321] {}] @update-args))
+
       (try
         (update {:version "10" :action "F" :publisher "D000000023456" :file_id 54321})
         (is false "should throw exception")
@@ -266,9 +301,8 @@
             (is (= (count errors) 1))
             (is (= :publisher (-> errors first :label)))
             (is (= "D000000023456" (-> errors first :val)))
-            (is (= "(common.validations/matches? #\"[DST]000000000[0-9][0-9][0-9][0-9][0-9]\")" (-> errors first :cond str)))
+            (is (= "(common.validations/matches? #\"[DST]000000000[0-9][0-9][0-9][0-9][0-9]\")" (-> errors first :cond str))))))
 
-            )))
       (try
         (update {:version "10" :action "A" :publisher "D00000000023456" :file_id 54321})
         (is false "should throw exception")
@@ -277,14 +311,13 @@
             (is (= (count errors) 1))
             (is (= :action (-> errors first :label)))
             (is (= "A" (-> errors first :val)))
-            (is (= #{"F" "U"} (-> errors first :cond)))
-            )))
-      )))
+            (is (= #{"F" "U"} (-> errors first :cond)))))))))
 
 (s/def :customer/name (v/matches? #"[A-Z][a-z]*"))
 
 (deftest test-executor
   (let [db "This is the db!"
+        trx "This is a transaction!"
         sql ["insert into customer (id,first_name,last_name) values (customer_id_seq(),?,?)"
              :first-name :last-name]
         execute (build-executor db sql
@@ -294,7 +327,9 @@
     (with-redefs [jdbc/execute! #(reset! execute-args %&)]
       (execute {:first-name "Steve" :last-name "Dave"})
       (is (= @execute-args [db ["insert into customer (id,first_name,last_name) values (customer_id_seq(),?,?)" "Steve" "Dave"] {}]))
-      )))
+
+      (execute {:first-name "Steve" :last-name "Dave"} :trx trx)
+      (is (= @execute-args [trx ["insert into customer (id,first_name,last_name) values (customer_id_seq(),?,?)" "Steve" "Dave"] {}])))))
 
 (s/def :customer/date-of-birth (partial instance? DateTime))
 
@@ -347,10 +382,7 @@
             (let [[{:keys [label val cond]}] errors]
               (is (= label :date-of-birth))
               (is (= val "1987-07-12"))
-              (is (= (str cond) "(clojure.core/partial clojure.core/instance? org.joda.time.DateTime)"))
-              )
-            )))
-      )))
+              (is (= (str cond) "(clojure.core/partial clojure.core/instance? org.joda.time.DateTime)")))))))))
 
 (deftest test-dao-service
   (let [db "This is the db!"
@@ -408,8 +440,7 @@
             (is (= (count errors) 1))
             (is (= :table-name (-> errors first :label)))
             (is (= "_customer" (-> errors first :val)))
-            (is (= "(common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str)))
-            )))
+            (is (= "(common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str))))))
 
       (db-call :get-customer-by-id {:customer-id 234})
       (is (= [:query db ["select * from customers where customer_id = ?" 234] {}] @jdbc-args))
@@ -431,8 +462,7 @@
             (is (= (count errors) 1))
             (is (= :rfs_load_id (-> errors first :label)))
             (is (= "15" (-> errors first :val)))
-            (is (= "clojure.core/int?" (-> errors first :cond str)))
-            )))
+            (is (= "clojure.core/int?" (-> errors first :cond str))))))
 
       (try
         (db-call :delete-rfs-load-by-id)
@@ -452,8 +482,7 @@
             (is (= (count errors) 1))
             (is (= :publisher (-> errors first :label)))
             (is (= "D000000023456" (-> errors first :val)))
-            (is (= "(common.validations/matches? #\"[DST]000000000[0-9][0-9][0-9][0-9][0-9]\")" (-> errors first :cond str)))
-            )))
+            (is (= "(common.validations/matches? #\"[DST]000000000[0-9][0-9][0-9][0-9][0-9]\")" (-> errors first :cond str))))))
 
       (try
         (db-call :update-datafile-from-header {:version "10" :action "A" :publisher "D00000000023456" :file_id 54321})
@@ -463,8 +492,7 @@
             (is (= (count errors) 1))
             (is (= :action (-> errors first :label)))
             (is (= "A" (-> errors first :val)))
-            (is (= #{"F" "U"} (-> errors first :cond)))
-            )))
+            (is (= #{"F" "U"} (-> errors first :cond))))))
 
       (db-call :create-customer-with-seq-id {:first-name "Steve" :last-name "Dave"})
       (is (= [:execute! db ["insert into customer (id,first_name,last_name) values (customer_id_seq(),?,?)" "Steve" "Dave"] {}] @jdbc-args))
@@ -512,10 +540,4 @@
             (let [[{:keys [label val cond]}] errors]
               (is (= label :date-of-birth))
               (is (= val "1987-07-12"))
-              (is (= (str cond) "(clojure.core/partial clojure.core/instance? org.joda.time.DateTime)"))
-              )
-            )))
-
-      )))
-
-
+              (is (= (str cond) "(clojure.core/partial clojure.core/instance? org.joda.time.DateTime)")))))))))
