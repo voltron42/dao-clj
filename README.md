@@ -1,14 +1,14 @@
 # dao-clj
 
-A Clojure library designed to ... well, that part is up to you.
+Dao-clj is a library built to wrap and simplify database interaction.
 
 ## Usage
 
-FIXME
+
 
 ## License
 
-Copyright © 2018 FIXME
+Copyright © 2018 Daniel Allen Johnson
 
 Distributed under the Eclipse Public License either version 1.0 or (at
 your option) any later version.

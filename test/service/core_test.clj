@@ -387,7 +387,7 @@
 (deftest test-dao-service
   (let [db "This is the db!"
         db-call (build-dao-service
-                  db {:get-customers [:read "select * from customers"]
+                  db {:customers/get-all [:read "select * from customers"]
 
                       :get-from [:read (h/tpl "select * from %s" :table-name)
                                  :arg-spec {:table-name :query/table-name}]
@@ -397,42 +397,42 @@
                                                   :id-name :query/table-name
                                                   :id int?}]
 
-                      :get-customer-by-id [:read ["select * from customers where customer_id = ?" :customer-id]
+                      :customers/get-by-id [:read ["select * from customers where customer_id = ?" :customer-id]
                                            :arg-spec {:customer-id int?}]
 
-                      :get-employee-by-id [:read (partial honey/format {:select [:*]
+                      :employees/get-by-id [:read (partial honey/format {:select [:*]
                                                                         :from [:employee]
                                                                         :where [:= :employee.id :?employee-id]})
                                            :arg-spec {:employee-id int?}]
 
-                      :get-load-by-statuses [:read (h/tpl "select * from load where %s" (h/where-in-list "status" :statuses))
+                      :load/get-by-statuses [:read (h/tpl "select * from load where %s" (h/where-in-list "status" :statuses))
                                              :arg-spec {:statuses :load/statuses}]
 
-                      :get-load-by-actions [:read (partial honey/format {:select [:*]
+                      :load/get-by-actions [:read (partial honey/format {:select [:*]
                                                                          :from [:load]
                                                                          :where [:in :action :?actions]})
                                             :arg-spec {:actions :load/statuses}]
 
-                      :get-load-by-statuses-and-action [:read (h/tpl "select * from load where action = ? and %s" :?/action (h/where-in-list "status" :statuses))
+                      :load/get-by-statuses-and-action [:read (h/tpl "select * from load where action = ? and %s" :?/action (h/where-in-list "status" :statuses))
                                                         :arg-spec {:statuses :load/statuses
                                                                    :action #{"C" "R" "U" "D"}}]
 
-                      :delete-rfs-load-by-id [:delete :rfs_load ["rfs_load_id = ?" :rfs_load_id]
+                      :rfs-load/delete-by-id [:delete :rfs_load ["rfs_load_id = ?" :rfs_load_id]
                                               :arg-spec {:rfs_load_id :rfs_load/id}]
 
-                      :update-datafile-from-header [:update :datafile {:version     #{"10" "30"}
+                      :datafile/update-from-header [:update :datafile {:version     #{"10" "30"}
                                                                        :publisher   :datafile/publisher
                                                                        :action      #{"F" "U"}}
                                                     ["file_id = ?" :file_id]
                                                     :arg-spec {:file_id int?}
                                                     :fixed-values {:load_status "L"}]
 
-                      :create-customer-with-seq-id [:execute ["insert into customer (id,first_name,last_name) values (customer_id_seq(),?,?)"
+                      :customer/create-with-seq-id [:execute ["insert into customer (id,first_name,last_name) values (customer_id_seq(),?,?)"
                                                               :first-name :last-name]
                                                     :arg-spec {:first-name :customer/name
                                                                :last-name :customer/name}]
 
-                      :create-customer [:create :customer
+                      :customer/create [:create :customer
                                         {:first-name    :customer/name
                                          :last-name     :customer/name
                                          :date-of-birth :customer/date-of-birth}]})
@@ -443,7 +443,7 @@
                   jdbc/update! #(reset! jdbc-args (into [:update!] %&))
                   jdbc/insert-multi! #(reset! jdbc-args (into [:insert-multi!] %&))
                   jdbc/execute! #(reset! jdbc-args (into [:execute!] %&))]
-      (db-call :get-customers)
+      (db-call :customers/get-all)
       (is (= [:query db ["select * from customers"] {}] @jdbc-args))
 
       (db-call :get-from {:table-name "a"})
@@ -465,22 +465,22 @@
             (is (= "_customer" (-> errors first :val)))
             (is (= "(common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str))))))
 
-      (db-call :get-customer-by-id {:customer-id 234})
+      (db-call :customers/get-by-id {:customer-id 234})
       (is (= [:query db ["select * from customers where customer_id = ?" 234] {}] @jdbc-args))
 
-      (db-call :get-employee-by-id {:employee-id 234})
+      (db-call :employees/get-by-id {:employee-id 234})
       (is (= [:query db ["SELECT * FROM employee WHERE employee.id = ?" 234] {}] @jdbc-args))
 
-      (db-call :get-load-by-statuses {:statuses (sorted-set "A" "B")})
+      (db-call :load/get-by-statuses {:statuses (sorted-set "A" "B")})
       (is (= [:query db ["select * from load where status in (?,?)" "A" "B"] {}] @jdbc-args))
 
-      (db-call :get-load-by-statuses {:statuses (sorted-set "A" "C" "D")})
+      (db-call :load/get-by-statuses {:statuses (sorted-set "A" "C" "D")})
       (is (= [:query db ["select * from load where status in (?,?,?)" "A" "C" "D"] {}] @jdbc-args))
 
-      (db-call :get-load-by-actions {:actions (sorted-set "A" "B")})
+      (db-call :load/get-by-actions {:actions (sorted-set "A" "B")})
       (is (= [:query db ["SELECT * FROM load WHERE action IN (?, ?)" "A" "B"] {}] @jdbc-args))
 
-      (db-call :get-load-by-actions {:actions (sorted-set "A" "C" "D")})
+      (db-call :load/get-by-actions {:actions (sorted-set "A" "C" "D")})
       (is (= [:query db ["SELECT * FROM load WHERE action IN (?, ?, ?)" "A" "C" "D"] {}] @jdbc-args))
 
       (db-call :delete-rfs-load-by-id {:rfs_load_id 15})
