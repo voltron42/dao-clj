@@ -2,10 +2,8 @@
   (:require [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.java.jdbc :as jdbc]
-            [clojure.string :as str]
             [util.exceptions :as x])
-  (:import (clojure.lang ExceptionInfo)
-           (java.sql SQLException)))
+  (:import (clojure.lang ExceptionInfo)))
 
 (defn- validate-item [spec item label]
   (if-let [{out-spec :clojure.spec.alpha/spec problems :clojure.spec.alpha/problems} (s/explain-data spec item)]
