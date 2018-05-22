@@ -111,7 +111,7 @@
             (when-not (empty? errors)
               (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
             (when-not (empty? args)
-              (jdbc/execute! db (reduce build-arg-list [(build-insert-all (count args))] args) opts)))))
+              (jdbc/execute! trx (reduce build-arg-list [(build-insert-all (count args))] args) opts)))))
       (fn [& args]
         (let [[args & {:keys [trx] :or {trx db} :as flags}] (if (even? (count args)) (into [{}] args) args)
               opts (merge opts-default (select-keys flags opt-names))
