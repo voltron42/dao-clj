@@ -384,6 +384,82 @@
               (is (= val "1987-07-12"))
               (is (= (str cond) "(clojure.core/partial clojure.core/instance? org.joda.time.DateTime)")))))))))
 
+(deftest test-inserter-special
+  (let [db "This is the db!"
+        insert (build-inserter db :customer
+                               {:first-name    :customer/name
+                                :last-name     :customer/name
+                                :date-of-birth :customer/date-of-birth}
+                               :special-cols
+                               {:id "customer_id_seq()"})
+        insert-args (atom nil)
+        insert-multi-args (atom nil)
+        execute-args (atom nil)
+        dob-1 (t/date-time 1998 2 5)
+        dob-2 (t/date-time 1987 5 17)
+        row-stmt "into customer (id,date-of-birth,first-name,last-name) values (customer_id_seq(),?,?,?)"
+        ]
+    (with-redefs [jdbc/insert! #(reset! insert-args %&)
+                  jdbc/insert-multi! #(reset! insert-multi-args %&)
+                  jdbc/execute! #(reset! execute-args %&)
+                  ]
+      (insert {:first-name "Steve"
+               :last-name "Dave"
+               :date-of-birth dob-1})
+      (let [[insert-db [insert & args] opts] @execute-args
+            [prefix & rows] (str/split insert #" \n ")
+            [suffix rows] (mapv #(% rows) [last drop-last])
+            ]
+        (is (= insert-db db))
+        (is (= prefix "insert all"))
+        (is (= suffix "select * from dual"))
+        (is (= (count rows) 1))
+        (is (every? (partial = row-stmt) rows))
+
+        (is (= args [dob-1
+                     "Steve"
+                     "Dave"]))
+
+        (is (= opts {})))
+
+      (insert [{:first-name "Steve"
+                :last-name "Dave"
+                :date-of-birth dob-1}
+               {:first-name "George"
+                :last-name "Kaplan"
+                :date-of-birth dob-2}])
+      (let [[insert-db [insert & args] opts] @execute-args
+            [prefix & rows] (str/split insert #" \n ")
+            [suffix rows] (mapv #(% rows) [last drop-last])
+            ]
+        (is (= insert-db db))
+        (is (= prefix "insert all"))
+        (is (= suffix "select * from dual"))
+        (is (= (count rows) 2))
+        (is (every? (partial = row-stmt) rows))
+
+        (is (= args [dob-1
+                     "Steve"
+                     "Dave"
+                     dob-2
+                     "George"
+                     "Kaplan"]))
+
+        (is (= opts {})))
+
+      (try
+        (insert {:first-name "Steve"
+                 :last-name "Dave"
+                 :date-of-birth "1987-07-12"})
+        (is false "should throw exception")
+        (catch ExceptionInfo e
+          (let [{:keys [errors]} (.getData e)]
+            (is (= (count errors) 1))
+            (let [[{:keys [label val cond]}] errors]
+              (is (= label :date-of-birth))
+              (is (= val "1987-07-12"))
+              (is (= (str cond) "(clojure.core/partial clojure.core/instance? org.joda.time.DateTime)")))))))))
+
 (deftest test-dao-service
   (let [db "This is the db!"
         db-call (build-dao-service
@@ -431,6 +507,13 @@
                                                               :first-name :last-name]
                                                     :arg-spec {:first-name :customer/name
                                                                :last-name :customer/name}]
+
+                      :customer/create-special [:create :customer
+                                                {:id int?
+                                                 :first-name :customer/name
+                                                 :last-name :customer/name}
+                                                :special-cols
+                                                {:id "customer_id_seq()"}]
 
                       :customer/create [:create :customer
                                         {:first-name    :customer/name
@@ -528,6 +611,7 @@
 
       (db-call :create-customer-with-seq-id {:first-name "Steve" :last-name "Dave"})
       (is (= [:execute! db ["insert into customer (id,first_name,last_name) values (customer_id_seq(),?,?)" "Steve" "Dave"] {}] @jdbc-args))
+
 
       (db-call :create-customer {:first-name "Steve"
                                  :last-name "Dave"

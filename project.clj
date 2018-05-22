@@ -1,4 +1,4 @@
-(defproject dao-clj "0.1.0-SNAPSHOT"
+(defproject org.clojars.voltron42/dao-clj "0.1.0-SNAPSHOT"
   :description "Wrapper for database interaction via jdbc"
   :url "https://github.com/voltron42/dao-clj"
   :license {:name "Eclipse Public License"

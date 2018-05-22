@@ -2,7 +2,8 @@
   (:require [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.java.jdbc :as jdbc]
-            [util.exceptions :as x])
+            [util.exceptions :as x]
+            [clojure.string :as str])
   (:import (clojure.lang ExceptionInfo)))
 
 (defn- validate-item [spec item label]
@@ -78,27 +79,57 @@
 (defn build-executor [db sql-params & {:keys [arg-spec obj-spec] :or {arg-spec {} obj-spec any?} :as flags}]
   (build-basic db #(jdbc/execute! %1 %3 %4) sql-params arg-spec obj-spec flags [:transaction? :multi?]))
 
-(defn build-inserter [db table column-spec & {:keys [record-spec] :or {record-spec any?} :as flags-default}]
+(defn- build-insert-all-builder [row-into]
+  (fn [row-count]
+    (str "insert all \n " (str/join " \n " (repeat row-count row-into)) " \n select * from dual")))
+
+(defn- build-arg-list-builder [arg-cols]
+  (fn [out obj]
+    (concat out (mapv #(get obj %) arg-cols))))
+
+(defn build-inserter [db table column-spec & {:keys [record-spec special-cols] :or {record-spec any? special-cols {}} :as flags-default}]
   (let [opt-names [:transaction? :entities]
         opts-default (select-keys flags-default opt-names)]
-    (fn [& args]
-      (let [[args & {:keys [trx] :or {trx db} :as flags}] (if (even? (count args)) (into [{}] args) args)
-            opts (merge opts-default (select-keys flags opt-names))
-            func (if (vector? args)
-                   (let [errors (reduce
-                                  (fn [out record]
-                                    (concat out
-                                            (validate-item record-spec record :full-record)
-                                            (validate-args column-spec record)))
-                                  [] args)]
-                     (when-not (empty? errors)
-                       (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
-                     #(jdbc/insert-multi! trx table args opts))
-                   (let [errors (validate-args column-spec args)]
-                     (when-not (empty? errors)
-                       (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
-                     #(jdbc/insert! trx table args opts)))]
-        (x/try-catch (func))))))
+    (if-not (empty? special-cols)
+      (let [special-col-list (apply sorted-set (keys special-cols))
+            arg-cols (apply sorted-set (keys column-spec))
+            cols (concat special-col-list arg-cols)
+            values-clause (str/join "," (mapv #(get special-cols % "?") cols))
+            row-into (str "into " (name table) " (" (str/join "," (mapv name cols)) ") values (" values-clause ")")
+            build-insert-all (build-insert-all-builder row-into)
+            build-arg-list (build-arg-list-builder arg-cols)]
+        (fn [& args]
+          (let [[args & {:keys [trx] :or {trx db} :as flags}] (if (even? (count args)) (into [[]] args) args)
+                args (if (vector? args) args [args])
+                opts (merge opts-default (select-keys flags opt-names))
+                errors (reduce
+                         (fn [out record]
+                           (concat out
+                                   (validate-item record-spec record :full-record)
+                                   (validate-args column-spec record)))
+                         [] args)]
+            (when-not (empty? errors)
+              (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
+            (when-not (empty? args)
+              (jdbc/execute! db (reduce build-arg-list [(build-insert-all (count args))] args) opts)))))
+      (fn [& args]
+        (let [[args & {:keys [trx] :or {trx db} :as flags}] (if (even? (count args)) (into [{}] args) args)
+              opts (merge opts-default (select-keys flags opt-names))
+              func (if (vector? args)
+                     (let [errors (reduce
+                                    (fn [out record]
+                                      (concat out
+                                              (validate-item record-spec record :full-record)
+                                              (validate-args column-spec record)))
+                                    [] args)]
+                       (when-not (empty? errors)
+                         (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
+                       #(jdbc/insert-multi! trx table args opts))
+                     (let [errors (validate-args column-spec args)]
+                       (when-not (empty? errors)
+                         (throw (ExceptionInfo. "Validation Errors" {:errors errors})))
+                       #(jdbc/insert! trx table args opts)))]
+          (x/try-catch (func)))))))
 
 (def ^:private build-functions {:create build-inserter
                                 :read build-inquisitor
