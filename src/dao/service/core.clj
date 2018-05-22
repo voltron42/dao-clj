@@ -1,4 +1,4 @@
-(ns service.core
+(ns dao.service.core
   (:require [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.java.jdbc :as jdbc]

@@ -1,4 +1,4 @@
-(ns service.honey
+(ns dao.service.honey
   (:require [honeysql.format :as fmt])
   (:import (org.joda.time DateTime)))
 

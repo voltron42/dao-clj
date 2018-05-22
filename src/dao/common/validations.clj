@@ -1,4 +1,4 @@
-(ns common.validations
+(ns dao.common.validations
   (:require [clojure.spec.alpha :as s]))
 
 (defn exact-count [bound]

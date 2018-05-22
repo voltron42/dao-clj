@@ -1,4 +1,4 @@
-(ns service.helpers
+(ns dao.service.helpers
   (:require [clojure.string :as str]))
 
 (defn tpl [query-str & vars]

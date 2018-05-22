@@ -1,19 +1,16 @@
 (ns service.core-test
   (:require [clojure.test :refer :all]
             [clojure.java.jdbc :as jdbc]
-            [service.core :refer :all]
-            [common.validations :as v]
+            [dao.service.core :refer :all]
+            [dao.common.validations :as v]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [honeysql.core :as honey]
-            [service.helpers :as h]
+            [dao.service.helpers :as h]
             [clj-time.core :as t]
-            [util.exceptions :as x])
+            [dao.util.exceptions :as x])
   (:import (clojure.lang ExceptionInfo)
-           (java.time DateTimeException)
-           (java.util Formatter$DateTime)
-           (org.joda.time DateTime)
-           (java.sql SQLException)))
+           (org.joda.time DateTime)))
 
 (deftest test-wrap-try
   (try

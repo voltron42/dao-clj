@@ -1,6 +1,6 @@
 (ns service.honey-test
   (:require [clojure.test :refer :all]
-            [service.honey :refer :all]
+            [dao.service.honey :refer :all]
             [honeysql.core :as sql]))
 
 (deftest test-q-mark

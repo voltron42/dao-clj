@@ -1,8 +1,6 @@
 (ns service.helpers-test
   (:require [clojure.test :refer :all]
-            [service.helpers :as h]
-            [honeysql.core :as honey]
-            [honeysql.format :as fmt]))
+            [dao.service.helpers :as h]))
 
 (deftest test-tpl
   (let [sql-fn (h/tpl "select * from %s" :table-name)]

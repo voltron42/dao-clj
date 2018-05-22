@@ -1,4 +1,4 @@
-(ns util.exceptions
+(ns dao.util.exceptions
   (:import (java.sql SQLException)
            (clojure.lang ExceptionInfo)))
 
