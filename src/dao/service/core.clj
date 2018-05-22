@@ -2,7 +2,7 @@
   (:require [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.java.jdbc :as jdbc]
-            [util.exceptions :as x]
+            [dao.util.exceptions :as x]
             [clojure.string :as str])
   (:import (clojure.lang ExceptionInfo)))
 

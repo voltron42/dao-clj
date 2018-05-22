@@ -112,7 +112,7 @@
             (is (= (count errors) 1))
             (is (= :table-name (-> errors first :label)))
             (is (= "_customer" (-> errors first :val)))
-            (is (= "(common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str)))))))))
+            (is (= "(dao.common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str)))))))))
 
 (deftest test-inquisitor-w-honeysql
   (let [db "This is the db!"
@@ -138,7 +138,7 @@
             (is (= (count errors) 1))
             (is (= :table-name (-> errors first :label)))
             (is (= "_customer" (-> errors first :val)))
-            (is (= "(common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str)))))))))
+            (is (= "(dao.common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str)))))))))
 
 (deftest test-inquisitor-w-args
   (let [db "This is the db!"
@@ -298,7 +298,7 @@
             (is (= (count errors) 1))
             (is (= :publisher (-> errors first :label)))
             (is (= "D000000023456" (-> errors first :val)))
-            (is (= "(common.validations/matches? #\"[DST]000000000[0-9][0-9][0-9][0-9][0-9]\")" (-> errors first :cond str))))))
+            (is (= "(dao.common.validations/matches? #\"[DST]000000000[0-9][0-9][0-9][0-9][0-9]\")" (-> errors first :cond str))))))
 
       (try
         (update {:version "10" :action "A" :publisher "D00000000023456" :file_id 54321})
@@ -543,7 +543,7 @@
             (is (= (count errors) 1))
             (is (= :table-name (-> errors first :label)))
             (is (= "_customer" (-> errors first :val)))
-            (is (= "(common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str))))))
+            (is (= "(dao.common.validations/matches? #\"[a-zA-Z][a-zA-Z0-9_]*([/.][a-zA-Z][a-zA-Z0-9_]*)*\")" (-> errors first :cond str))))))
 
       (db-call :customers/get-by-id {:customer-id 234})
       (is (= [:query db ["select * from customers where customer_id = ?" 234] {}] @jdbc-args))
@@ -563,11 +563,11 @@
       (db-call :load/get-by-actions {:actions (sorted-set "A" "C" "D")})
       (is (= [:query db ["SELECT * FROM load WHERE action IN (?, ?, ?)" "A" "C" "D"] {}] @jdbc-args))
 
-      (db-call :delete-rfs-load-by-id {:rfs_load_id 15})
+      (db-call :rfs-load/delete-by-id {:rfs_load_id 15})
       (is (= [:delete! db :rfs_load ["rfs_load_id = ?" 15] {}] @jdbc-args))
 
       (try
-        (db-call :delete-rfs-load-by-id  {:rfs_load_id "15"})
+        (db-call :rfs-load/delete-by-id  {:rfs_load_id "15"})
         (is false "should throw exception")
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
@@ -577,27 +577,27 @@
             (is (= "clojure.core/int?" (-> errors first :cond str))))))
 
       (try
-        (db-call :delete-rfs-load-by-id)
+        (db-call :rfs-load/delete-by-id)
         (is false "should throw exception")
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
             (is (= errors [{:missing-args #{:rfs_load_id}}])))))
 
-      (db-call :update-datafile-from-header {:version "10" :action "F" :publisher "D00000000023456" :file_id 54321})
+      (db-call :datafile/update-from-header {:version "10" :action "F" :publisher "D00000000023456" :file_id 54321})
       (is (= [:update! db :datafile {:version "10" :action "F" :publisher "D00000000023456" :load_status "L"} ["file_id = ?" 54321] {}] @jdbc-args))
 
       (try
-        (db-call :update-datafile-from-header {:version "10" :action "F" :publisher "D000000023456" :file_id 54321})
+        (db-call :datafile/update-from-header {:version "10" :action "F" :publisher "D000000023456" :file_id 54321})
         (is false "should throw exception")
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
             (is (= (count errors) 1))
             (is (= :publisher (-> errors first :label)))
             (is (= "D000000023456" (-> errors first :val)))
-            (is (= "(common.validations/matches? #\"[DST]000000000[0-9][0-9][0-9][0-9][0-9]\")" (-> errors first :cond str))))))
+            (is (= "(dao.common.validations/matches? #\"[DST]000000000[0-9][0-9][0-9][0-9][0-9]\")" (-> errors first :cond str))))))
 
       (try
-        (db-call :update-datafile-from-header {:version "10" :action "A" :publisher "D00000000023456" :file_id 54321})
+        (db-call :datafile/update-from-header {:version "10" :action "A" :publisher "D00000000023456" :file_id 54321})
         (is false "should throw exception")
         (catch ExceptionInfo e
           (let [{:keys [errors]} (.getData e)]
@@ -606,11 +606,11 @@
             (is (= "A" (-> errors first :val)))
             (is (= #{"F" "U"} (-> errors first :cond))))))
 
-      (db-call :create-customer-with-seq-id {:first-name "Steve" :last-name "Dave"})
+      (db-call :customer/create-with-seq-id {:first-name "Steve" :last-name "Dave"})
       (is (= [:execute! db ["insert into customer (id,first_name,last_name) values (customer_id_seq(),?,?)" "Steve" "Dave"] {}] @jdbc-args))
 
 
-      (db-call :create-customer {:first-name "Steve"
+      (db-call :customer/create {:first-name "Steve"
                                  :last-name "Dave"
                                  :date-of-birth (t/date-time 1998 2 5)})
       (let [[label insert-db table {:keys [first-name last-name date-of-birth]} opts] @jdbc-args]
@@ -622,7 +622,7 @@
         (is (and (not (nil? date-of-birth)) (t/equal? date-of-birth (t/date-time 1998 2 5))))
         (is (= opts {})))
 
-      (db-call :create-customer
+      (db-call :customer/create
                [{:first-name "Steve"
                 :last-name "Dave"
                 :date-of-birth (t/date-time 1998 2 5)}
@@ -642,7 +642,7 @@
         (is (= opts {})))
 
       (try
-        (db-call :create-customer
+        (db-call :customer/create
                  {:first-name "Steve"
                   :last-name "Dave"
                   :date-of-birth "1987-07-12"})
