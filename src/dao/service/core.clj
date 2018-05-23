@@ -40,7 +40,10 @@
    (let [default-opts (select-keys default-flag-map opt-names)
          sql-params (if (string? sql-params) [sql-params] sql-params)
          func (if (coll? sql-params)
-                (partial substitute-args sql-params)
+                (let [missing-args (set/difference (set (rest sql-params)) (set (keys arg-spec)))]
+                  (when-not (empty? missing-args)
+                    (throw (ExceptionInfo. "Missing Args" {:missing-args missing-args})))
+                  (partial substitute-args sql-params))
                 (fn [args]
                   (let [result (sql-params args)
                         result (if (string? result) [result] result)]
